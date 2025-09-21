@@ -1,0 +1,355 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// PlayBattleController
+using UnityEngine;
+using UnityEngine.UI;
+
+public class PlayBattleController : MonoBehaviour
+{
+	private readonly string UNIQUE_NAME = "PLAY BATTLE";
+
+	public AudioSource audioSource;
+
+	public AudioClip endStageClip;
+
+	public GameObject mapController;
+
+	public GameObject bGameController;
+
+	public GameObject[] speedButtons;
+
+	public GameObject stageName;
+
+	public GameObject popup;
+
+	public GameObject overlay;
+
+	public GameObject options;
+
+	public GameObject leftArrow;
+
+	public GameObject rightArrow;
+
+	private Color PRESSED_BUTTON_COLOR = new Color(0.47058824f, 0.5882353f, 0.9411765f);
+
+	private GameObject networkController;
+
+	private STATE currentState;
+
+	public SceneController sceneScript;
+
+	private void Awake()
+	{
+		networkController = GameObject.Find("Network Controller");
+	}
+
+	private void Start()
+	{
+		if (GameManager.manager != null && GameManager.manager.IsAutoMode)
+		{
+			SetFastMode();
+		}
+		else
+		{
+			int currentSpeed = GameManager.manager.GetCurrentSpeed();
+			SetSpeed(currentSpeed);
+		}
+		sceneScript = new SceneController("PlayBattleScene");
+		stageName.GetComponentInChildren<Text>().text = "Battle";
+		stageName.SetActive(value: true);
+		bGameController.SetActive(value: true);
+	}
+
+	private void SetFastMode()
+	{
+		Debug.Log("[AUTO MODE] Fast simulation mode activated.");
+		GameManager.manager.SetCurrentSpeed(50);
+		Time.timeScale = 50f;
+		if (Camera.main != null)
+		{
+			Camera.main.enabled = false;
+		}
+		Canvas[] array = Object.FindObjectsOfType<Canvas>();
+		for (int i = 0; i < array.Length; i++)
+		{
+			array[i].gameObject.SetActive(value: false);
+		}
+		Renderer[] array2 = Object.FindObjectsOfType<Renderer>();
+		for (int i = 0; i < array2.Length; i++)
+		{
+			array2[i].enabled = false;
+		}
+		GameManager.manager.muteAll = true;
+	}
+
+	public int GetDistances()
+	{
+		string[,] map = mapController.GetComponent<MapController>().GetMap();
+		int num = 0;
+		int num2 = 0;
+		int[] array = new int[2] { 15, 0 };
+		int[] array2 = new int[2] { 0, 15 };
+		for (int i = 0; i < map.GetLength(0); i++)
+		{
+			for (int j = 0; j < map.GetLength(1); j++)
+			{
+				if (map[i, j] == "A1" || map[i, j] == "A2" || map[i, j] == "A3")
+				{
+					int num3 = Mathf.Abs(i - array2[0]);
+					int num4 = Mathf.Abs(j - array2[1]);
+					num += num4 + num3;
+					Debug.Log($"Left Distance from {map[i, j]} to BX. X: {num4}, Y: {num3}");
+				}
+				else if (map[i, j] == "B1" || map[i, j] == "B2" || map[i, j] == "B3")
+				{
+					int num5 = Mathf.Abs(i - array[0]);
+					int num6 = Mathf.Abs(j - array[1]);
+					num2 += num6 + num5;
+					Debug.Log($"Left Distance from {map[i, j]} to AX. X: {num6}, Y: {num5}");
+				}
+			}
+		}
+		Debug.Log($"Left Distance Sub: A - {num}, B - {num2}");
+		return num2 - num;
+	}
+
+	public void EndStage()
+	{
+		if (GameManager.manager.CanPlayBGM() && (bool)audioSource && (bool)endStageClip)
+		{
+			audioSource.PlayOneShot(endStageClip);
+		}
+		_ = GameManager.manager;
+		BGameController componentInChildren = bGameController.GetComponentInChildren<BGameController>();
+		string text = string.Empty;
+		if (componentInChildren.isTurnOvered)
+		{
+			Debug.Log("[" + UNIQUE_NAME + "] Check Turn-overed.");
+			int[] leftHealth = componentInChildren.GetLeftHealth();
+			if (leftHealth[0] > leftHealth[1])
+			{
+				leftArrow.SetActive(value: true);
+				rightArrow.SetActive(value: false);
+				string winner = "A";
+				string reason = "Team B의 피해가 더 큽니다.";
+				GameManager.manager.SetMatchResult(winner, reason);
+				text += "Team A 승리";
+				text += "\n\n(Team B의 피해가 더 큽니다.)";
+			}
+			else if (leftHealth[0] < leftHealth[1])
+			{
+				leftArrow.SetActive(value: false);
+				rightArrow.SetActive(value: true);
+				string winner2 = "B";
+				string reason2 = "Team A의 피해가 더 큽니다.";
+				GameManager.manager.SetMatchResult(winner2, reason2);
+				text += "Team B 승리";
+				text += "\n\n(Team A의 피해가 더 큽니다.)";
+			}
+			else
+			{
+				int distances = GetDistances();
+				if (distances != 0)
+				{
+					leftArrow.SetActive(distances > 0);
+					rightArrow.SetActive(distances < 0);
+					string text2 = ((distances > 0) ? "A" : "B");
+					string reason3 = "탱크와 상대 포탑 간의 거리 합이 Team " + text2 + "가 더 작습니다.";
+					GameManager.manager.SetMatchResult(text2, reason3);
+					text = text + "Team " + text2 + " 승리";
+					text = text + "\n\n(탱크와 상대 포탑 간의 거리 합이 Team " + text2 + "가 더 작습니다.)";
+				}
+				else
+				{
+					leftArrow.SetActive(value: false);
+					rightArrow.SetActive(value: true);
+					string winner3 = "B";
+					string reason4 = "양 팀의 피해량과 거리의 합이 대등하여 후공이 승리합니다.";
+					GameManager.manager.SetMatchResult(winner3, reason4);
+					text += "Team B 승리";
+					text += "\n\n(양 팀의 피해량과 거리의 합이 대등하여 후공이 승리합니다.)";
+				}
+			}
+		}
+		else if (componentInChildren.turretB <= 0)
+		{
+			leftArrow.SetActive(value: true);
+			rightArrow.SetActive(value: false);
+			string winner4 = "A";
+			string reason5 = "Team B의 포탑이 파괴되었습니다.";
+			GameManager.manager.SetMatchResult(winner4, reason5);
+			text += "Team A 승리";
+			text += "\n\n(Team B의 포탑이 파괴되었습니다.)";
+		}
+		else if (componentInChildren.turretA <= 0)
+		{
+			leftArrow.SetActive(value: false);
+			rightArrow.SetActive(value: true);
+			string winner5 = "B";
+			string reason6 = "Team A의 포탑이 파괴되었습니다.";
+			GameManager.manager.SetMatchResult(winner5, reason6);
+			text += "Team B 승리";
+			text += "\n\n(Team A의 포탑이 파괴되었습니다.)";
+		}
+		else if (componentInChildren.destroyedB >= 2)
+		{
+			leftArrow.SetActive(value: true);
+			rightArrow.SetActive(value: false);
+			string winner6 = "A";
+			string reason7 = "Team B의 탱크 2대가 파괴되었습니다.";
+			GameManager.manager.SetMatchResult(winner6, reason7);
+			text += "Team A 승리";
+			text += "\n\n(Team B의 탱크 2대가 파괴되었습니다.)";
+		}
+		else if (componentInChildren.destroyedA >= 2)
+		{
+			leftArrow.SetActive(value: false);
+			rightArrow.SetActive(value: true);
+			string winner7 = "B";
+			string reason8 = "Team A의 탱크 2대가 파괴되었습니다.";
+			GameManager.manager.SetMatchResult(winner7, reason8);
+			text += "Team B 승리";
+			text += "\n\n(Team A의 탱크 2대가 파괴되었습니다.)";
+		}
+		else if (componentInChildren.aliveB <= 0)
+		{
+			leftArrow.SetActive(value: true);
+			rightArrow.SetActive(value: false);
+			string winner8 = "A";
+			string reason9 = "Team B의 모든 탱크가 파괴되었습니다.";
+			GameManager.manager.SetMatchResult(winner8, reason9);
+			text += "Team A 승리";
+			text += "\n\n(Team B의 모든 탱크가 파괴되었습니다.)";
+		}
+		else if (componentInChildren.aliveA <= 0)
+		{
+			leftArrow.SetActive(value: false);
+			rightArrow.SetActive(value: true);
+			string winner9 = "B";
+			string reason10 = "Team A의 모든 탱크가 파괴되었습니다.";
+			GameManager.manager.SetMatchResult(winner9, reason10);
+			text += "Team B 승리";
+			text += "\n\n(Team A의 모든 탱크가 파괴되었습니다.)";
+		}
+		else if (componentInChildren.disconnectedPlayer > -1)
+		{
+			_ = string.Empty;
+			string nameOfReason = componentInChildren.nameOfReason;
+			string text3 = "";
+			string text4 = "";
+			if (componentInChildren.disconnectedPlayer % 2 == 0)
+			{
+				leftArrow.SetActive(value: false);
+				rightArrow.SetActive(value: true);
+				text3 = "B";
+				text4 = "A";
+				text += "Team B 승리";
+			}
+			else
+			{
+				leftArrow.SetActive(value: true);
+				rightArrow.SetActive(value: false);
+				text3 = "A";
+				text4 = "B";
+				text += "Team A 승리";
+			}
+			string reason11 = text4 + "팀 " + nameOfReason + "의 연결이 끊어졌습니다.";
+			GameManager.manager.SetMatchResult(text3, reason11);
+			text = text + "\n\n(" + text4 + "팀 " + nameOfReason + "의 연결이 끊어졌습니다.)";
+		}
+		else if (componentInChildren.timeoutPlayer > -1)
+		{
+			_ = string.Empty;
+			string nameOfReason2 = componentInChildren.nameOfReason;
+			string text5 = "";
+			string text6 = "";
+			if (componentInChildren.timeoutPlayer % 2 == 0)
+			{
+				leftArrow.SetActive(value: false);
+				rightArrow.SetActive(value: true);
+				text5 = "B";
+				text6 = "A";
+				text += "Team B 승리";
+			}
+			else
+			{
+				leftArrow.SetActive(value: true);
+				rightArrow.SetActive(value: false);
+				text5 = "A";
+				text6 = "B";
+				text += "Team A 승리";
+			}
+			string reason12 = text6 + "팀 " + nameOfReason2 + "의 응답이 시간을 초과하였습니다.";
+			GameManager.manager.SetMatchResult(text5, reason12);
+			text = text + "\n\n(" + text6 + "팀 " + nameOfReason2 + "의 응답이 시간을 초과하였습니다.)";
+		}
+		popup.GetComponentInChildren<Text>().text = text;
+		overlay.SetActive(value: true);
+		popup.SetActive(value: true);
+		options.SetActive(value: false);
+		if (networkController.activeSelf)
+		{
+			networkController.GetComponent<NetworkController>().CloseConnection();
+		}
+		Time.timeScale = 0f;
+	}
+
+	public void ClickOptionButton()
+	{
+		GameManager manager = GameManager.manager;
+		currentState = manager.GetState();
+		Time.timeScale = 0f;
+		manager.SetState(STATE.PAUSED);
+		overlay.SetActive(value: true);
+		popup.SetActive(value: false);
+		options.SetActive(value: true);
+	}
+
+	public void ClickResumeButton()
+	{
+		Time.timeScale = 1f;
+		GameManager.manager.SetState(currentState);
+		overlay.SetActive(value: false);
+		options.SetActive(value: false);
+	}
+
+	public void ClickReturnButton()
+	{
+		GameManager manager = GameManager.manager;
+		manager.SetState(STATE.NONE);
+		manager.SetProceed(PROCEED.STOPPED);
+		sceneScript.ChangeScene("BattleScene");
+		Object.Destroy(networkController);
+	}
+
+	public void SetSpeed(int index)
+	{
+		GameManager.manager.SetCurrentSpeed(index);
+		GameObject[] array = speedButtons;
+		for (int i = 0; i < array.Length; i++)
+		{
+			array[i].GetComponent<Image>().color = Color.white;
+		}
+		speedButtons[index].GetComponent<Image>().color = PRESSED_BUTTON_COLOR;
+		switch (index)
+		{
+		case 0:
+			Time.timeScale = 0f;
+			break;
+		case 1:
+			Time.timeScale = 1f;
+			break;
+		case 2:
+			Time.timeScale = 2f;
+			break;
+		case 3:
+			Time.timeScale = 3f;
+			break;
+		case 4:
+			Time.timeScale = 5f;
+			break;
+		case 5:
+			Time.timeScale = 10f;
+			break;
+		}
+	}
+}

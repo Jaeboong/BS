@@ -1,0 +1,61 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// KeyInputController
+using UnityEngine;
+
+public class KeyInputController : MonoBehaviour
+{
+	[SerializeField]
+	[Tooltip("Set the turretController here")]
+	private GrenadeTurretController turretCntrl;
+
+	private void Awake()
+	{
+		if (turretCntrl == null)
+		{
+			Debug.LogError("InputController: Please set the turretController which you want to control in the inspector.");
+		}
+	}
+
+	private void Update()
+	{
+		if (Input.GetAxis("Horizontal") > 0f || Input.GetAxis("Horizontal") < 0f)
+		{
+			turretCntrl.fnc_rotateTower(Input.GetAxis("Horizontal"));
+		}
+		if (Input.GetAxis("Vertical") > 0f || Input.GetAxis("Vertical") < 0f)
+		{
+			turretCntrl.fnc_rotateBarrel(Input.GetAxis("Vertical"));
+		}
+		if (Input.GetButtonDown("Fire1"))
+		{
+			turretCntrl.fnc_fireGrenade();
+		}
+		if (Input.GetKeyDown(KeyCode.R))
+		{
+			turretCntrl.fnc_reloadGrenades(5);
+		}
+		if (Input.GetButtonDown("Jump"))
+		{
+			turretCntrl.fnc_recenterTurret(inRecenterTower: true, inRecenterBarrel: true);
+		}
+		if (Input.GetKeyDown(KeyCode.Q))
+		{
+			turretCntrl.fnc_recenterTurret(inRecenterTower: true, inRecenterBarrel: false);
+		}
+		if (Input.GetKeyDown(KeyCode.E))
+		{
+			turretCntrl.fnc_recenterTurret(inRecenterTower: false, inRecenterBarrel: true);
+		}
+		if (Input.GetKeyDown(KeyCode.T))
+		{
+			if (!turretCntrl.arcDisplayCalculator.showDebugObjects)
+			{
+				turretCntrl.arcDisplayCalculator.fnc_setDisplayStatus(inDisplayStatus: true);
+			}
+			else
+			{
+				turretCntrl.arcDisplayCalculator.fnc_setDisplayStatus(inDisplayStatus: false);
+			}
+		}
+	}
+}

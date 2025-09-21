@@ -1,0 +1,485 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// GrenadeTurretController
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Events;
+
+public class GrenadeTurretController : MonoBehaviour
+{
+	public Transform transformTurretTower;
+
+	public Transform transformBarrelHolder;
+
+	public Transform transformGrenadeSpawn;
+
+	public bool useTowerRotationBoundaries;
+
+	public float towerRotationBoundary = 45f;
+
+	public float towerRotationSpeed = 1f;
+
+	public Vector2 barrelHolderRotationBoundaries = new Vector2(0f, 85f);
+
+	public float barrelHolderRotationSpeed = 0.5f;
+
+	public GameObject grenadePrefab;
+
+	public bool useGrenadeObjectPool = true;
+
+	public bool allowGrenadePoolRollOver;
+
+	public int grenadePoolSize = 20;
+
+	public float fireFrequency = 1f;
+
+	public int maxGrenadeAmmo;
+
+	public int startGrenadeAmmo;
+
+	public bool useFireEffect = true;
+
+	public Transform transformFireEffectSpawn;
+
+	public GameObject fireEffectPrefab;
+
+	public GameObject arcDisplayCalculatorPrefab;
+
+	public bool updateArcEveryFrame;
+
+	public bool useArcDisplayDebugObjects = true;
+
+	public bool arcDisplayDebugObjects = true;
+
+	public bool useCrosshair = true;
+
+	public GameObject crosshairPrefab;
+
+	private bool _isReady;
+
+	private float _grenadeMass = 1f;
+
+	private float _grenadeImpulse = 1f;
+
+	private int _remainingGrenades;
+
+	private float _barrelRotation;
+
+	private ArcDisplayCalculator _arcDisplayCalculator;
+
+	private string objectTag = "Turret";
+
+	public UnityEvent OnFiredGrenade = new UnityEvent();
+
+	public UnityEvent OnEmpty = new UnityEvent();
+
+	public UnityEvent OnReloaded = new UnityEvent();
+
+	public UnityEvent OnUpdatedAim = new UnityEvent();
+
+	private List<GameObject> grenadePool = new List<GameObject>();
+
+	private Quaternion startRotationTower;
+
+	private Quaternion startRotationBarrel;
+
+	private float leftTowerRotationBoundary;
+
+	private float topBarrelRotationBoundary;
+
+	private float bottomBarrelRotationBoundary;
+
+	private float timeOfNextAllowedShot;
+
+	private Coroutine coroutineRecenterTower;
+
+	private Coroutine coroutineRecenterBarrel;
+
+	private GameObject crosshair;
+
+	private Vector3 lastPosition = Vector3.zero;
+
+	private Quaternion lastRotation = Quaternion.identity;
+
+	public bool isReady
+	{
+		get
+		{
+			return _isReady;
+		}
+		private set
+		{
+			_isReady = value;
+		}
+	}
+
+	public float grenadeMass
+	{
+		get
+		{
+			return _grenadeMass;
+		}
+		private set
+		{
+			_grenadeMass = value;
+		}
+	}
+
+	public float grenadeImpulse
+	{
+		get
+		{
+			return _grenadeImpulse;
+		}
+		private set
+		{
+			_grenadeImpulse = value;
+		}
+	}
+
+	public int remainingGrenades
+	{
+		get
+		{
+			return _remainingGrenades;
+		}
+		private set
+		{
+			_remainingGrenades = value;
+		}
+	}
+
+	public float barrelRotation
+	{
+		get
+		{
+			return _barrelRotation;
+		}
+		private set
+		{
+			_barrelRotation = value;
+		}
+	}
+
+	public ArcDisplayCalculator arcDisplayCalculator
+	{
+		get
+		{
+			return _arcDisplayCalculator;
+		}
+		private set
+		{
+			_arcDisplayCalculator = value;
+		}
+	}
+
+	private void Awake()
+	{
+		base.gameObject.tag = objectTag;
+		Transform[] componentsInChildren = base.gameObject.GetComponentsInChildren<Transform>();
+		for (int i = 0; i < componentsInChildren.Length; i++)
+		{
+			componentsInChildren[i].tag = objectTag;
+		}
+	}
+
+	private void Start()
+	{
+		if (grenadePrefab != null)
+		{
+			if (useGrenadeObjectPool)
+			{
+				for (int i = 0; i < grenadePoolSize; i++)
+				{
+					GameObject gameObject = UnityEngine.Object.Instantiate(grenadePrefab);
+					gameObject.GetComponent<GrenadeController>().fnc_setupGrenade(inIsPoolGrenade: true, transformGrenadeSpawn);
+					gameObject.name = base.gameObject.name + "_grenade_" + i;
+					gameObject.SetActive(value: false);
+					grenadePool.Add(gameObject);
+				}
+			}
+			if (grenadePrefab.GetComponent<Rigidbody>() != null)
+			{
+				grenadeMass = grenadePrefab.GetComponent<Rigidbody>().mass;
+			}
+			if (grenadePrefab.GetComponent<GrenadeController>() != null)
+			{
+				grenadeImpulse = grenadePrefab.GetComponent<GrenadeController>().launchImpulseForce;
+			}
+			if (maxGrenadeAmmo > 0)
+			{
+				remainingGrenades = startGrenadeAmmo;
+			}
+			if (transformTurretTower != null)
+			{
+				startRotationTower = transformTurretTower.localRotation;
+				if (transformBarrelHolder != null)
+				{
+					startRotationBarrel = transformBarrelHolder.localRotation;
+				}
+				else
+				{
+					Debug.LogError("GrenadeTurretController: No transform for the barrel was set.");
+				}
+				leftTowerRotationBoundary = 360f - towerRotationBoundary;
+				topBarrelRotationBoundary = 360f - barrelHolderRotationBoundaries.y;
+				if (barrelHolderRotationBoundaries.x > 0f)
+				{
+					bottomBarrelRotationBoundary = 360f - barrelHolderRotationBoundaries.x;
+				}
+				else
+				{
+					bottomBarrelRotationBoundary = Mathf.Abs(barrelHolderRotationBoundaries.x);
+				}
+				if (transformGrenadeSpawn != null && arcDisplayCalculatorPrefab.GetComponent<ArcDisplayCalculator>() != null)
+				{
+					GameObject gameObject2 = UnityEngine.Object.Instantiate(arcDisplayCalculatorPrefab, transformGrenadeSpawn.position, Quaternion.identity);
+					gameObject2.transform.parent = transformTurretTower;
+					gameObject2.name = "ArcCalculator";
+					arcDisplayCalculator = gameObject2.GetComponent<ArcDisplayCalculator>();
+					arcDisplayCalculator.fnc_setupArcDisplayCalculator(grenadeImpulse, grenadeMass, transformGrenadeSpawn, transformTurretTower, transformBarrelHolder, useArcDisplayDebugObjects);
+					arcDisplayCalculator.fnc_setDisplayStatus(arcDisplayDebugObjects);
+					arcDisplayCalculator.OnUpdatedHitPosition.AddListener(evt_updateCrosshairPosition);
+				}
+				if (useCrosshair && crosshairPrefab != null)
+				{
+					crosshair = UnityEngine.Object.Instantiate(crosshairPrefab, Vector3.zero, Quaternion.identity);
+					crosshair.name = "Crosshair";
+					crosshair.transform.parent = base.gameObject.transform;
+				}
+				fnc_updateArcRotation();
+				isReady = true;
+			}
+			else
+			{
+				Debug.LogError("GrenadeTurretController: No transform for the tower was set.");
+			}
+		}
+		else
+		{
+			Debug.LogError("GrenadeTurretController: No grenade prefab was set.");
+		}
+	}
+
+	private void Update()
+	{
+		if (updateArcEveryFrame && (lastPosition != base.gameObject.transform.position || lastRotation != base.gameObject.transform.rotation))
+		{
+			lastPosition = base.gameObject.transform.position;
+			lastRotation = base.gameObject.transform.rotation;
+			fnc_updateArcRotation();
+		}
+	}
+
+	public void fnc_fireGrenade()
+	{
+		if (!isReady)
+		{
+			return;
+		}
+		if (maxGrenadeAmmo != 0)
+		{
+			if (remainingGrenades <= 0)
+			{
+				OnEmpty.Invoke();
+				return;
+			}
+			remainingGrenades--;
+			if (remainingGrenades <= 0)
+			{
+				remainingGrenades = 0;
+				OnEmpty.Invoke();
+			}
+		}
+		if (!(Time.time > timeOfNextAllowedShot))
+		{
+			return;
+		}
+		timeOfNextAllowedShot = Time.time + fireFrequency;
+		if (useGrenadeObjectPool)
+		{
+			GameObject gameObject = fnc_retrieveGrenadeFromPool();
+			if (gameObject != null)
+			{
+				gameObject.SetActive(value: true);
+			}
+		}
+		else
+		{
+			UnityEngine.Object.Instantiate(grenadePrefab).GetComponent<GrenadeController>().fnc_setupGrenade(inIsPoolGrenade: false, transformGrenadeSpawn);
+		}
+		if (useFireEffect && fireEffectPrefab != null)
+		{
+			UnityEngine.Object.Instantiate(fireEffectPrefab, transformFireEffectSpawn.position, transformFireEffectSpawn.rotation);
+		}
+		OnFiredGrenade.Invoke();
+	}
+
+	public void fnc_reloadGrenades(int inNrOfGrenadesToReload)
+	{
+		if (isReady && maxGrenadeAmmo != 0)
+		{
+			remainingGrenades += inNrOfGrenadesToReload;
+			if (remainingGrenades >= maxGrenadeAmmo)
+			{
+				remainingGrenades = maxGrenadeAmmo;
+			}
+			OnReloaded.Invoke();
+		}
+	}
+
+	public void fnc_rotateTower(float inRotationAmount)
+	{
+		if (!isReady)
+		{
+			return;
+		}
+		if (useTowerRotationBoundaries)
+		{
+			if (inRotationAmount > 0f)
+			{
+				if (transformTurretTower.localEulerAngles.y >= towerRotationBoundary && transformTurretTower.localEulerAngles.y <= 180f)
+				{
+					return;
+				}
+			}
+			else if (inRotationAmount < 0f && transformTurretTower.localEulerAngles.y <= leftTowerRotationBoundary && transformTurretTower.localEulerAngles.y >= 180f)
+			{
+				return;
+			}
+		}
+		transformTurretTower.Rotate(Vector3.up, inRotationAmount * Time.deltaTime * towerRotationSpeed, Space.Self);
+		fnc_updateArcRotation();
+		OnUpdatedAim.Invoke();
+	}
+
+	public void fnc_rotateBarrel(float inRotationAmount)
+	{
+		if (!isReady)
+		{
+			return;
+		}
+		if (inRotationAmount > 0f)
+		{
+			if (transformBarrelHolder.localEulerAngles.x <= topBarrelRotationBoundary && transformBarrelHolder.localEulerAngles.x >= 180f)
+			{
+				return;
+			}
+		}
+		else if (inRotationAmount < 0f && transformBarrelHolder.localEulerAngles.x >= bottomBarrelRotationBoundary && transformBarrelHolder.localEulerAngles.x <= 180f)
+		{
+			return;
+		}
+		transformBarrelHolder.Rotate(Vector3.left, inRotationAmount * Time.deltaTime * barrelHolderRotationSpeed, Space.Self);
+		barrelRotation = transformBarrelHolder.eulerAngles.x;
+		fnc_updateArcRotation();
+		OnUpdatedAim.Invoke();
+	}
+
+	public void fnc_recenterTurret(bool inRecenterTower, bool inRecenterBarrel)
+	{
+		if (!isReady)
+		{
+			return;
+		}
+		if (inRecenterTower)
+		{
+			if (coroutineRecenterTower != null)
+			{
+				StopCoroutine(coroutineRecenterTower);
+			}
+			coroutineRecenterTower = StartCoroutine(co_recenter(transformTurretTower, startRotationTower, towerRotationSpeed, isTower: true));
+		}
+		if (inRecenterBarrel)
+		{
+			if (coroutineRecenterBarrel != null)
+			{
+				StopCoroutine(coroutineRecenterBarrel);
+			}
+			coroutineRecenterBarrel = StartCoroutine(co_recenter(transformBarrelHolder, startRotationBarrel, barrelHolderRotationSpeed, isTower: false));
+		}
+	}
+
+	private void fnc_updateArcRotation()
+	{
+		if (barrelRotation > 180f)
+		{
+			arcDisplayCalculator.fnc_calculateFlightPathAndHit((360f - barrelRotation) * (MathF.PI / 180f));
+		}
+		else if (barrelRotation > 90f)
+		{
+			arcDisplayCalculator.fnc_calculateFlightPathAndHit(barrelRotation * (MathF.PI / 180f));
+		}
+		else
+		{
+			arcDisplayCalculator.fnc_calculateFlightPathAndHit((0f - barrelRotation) * (MathF.PI / 180f));
+		}
+	}
+
+	private GameObject fnc_retrieveGrenadeFromPool()
+	{
+		for (int i = 0; i < grenadePool.Count; i++)
+		{
+			if (!grenadePool[i].activeInHierarchy)
+			{
+				return grenadePool[i];
+			}
+		}
+		if (allowGrenadePoolRollOver)
+		{
+			List<float> list = new List<float>();
+			for (int j = 0; j < grenadePool.Count; j++)
+			{
+				list.Add(grenadePool[j].GetComponent<GrenadeController>().lifeTimeLeft);
+			}
+			float num = list[0];
+			int index = 0;
+			for (int k = 0; k < grenadePool.Count; k++)
+			{
+				if (list[k] < num)
+				{
+					index = k;
+				}
+			}
+			grenadePool[index].SetActive(value: false);
+			return grenadePool[index];
+		}
+		return null;
+	}
+
+	private void evt_updateCrosshairPosition()
+	{
+		if (useCrosshair)
+		{
+			if (arcDisplayCalculator.projectileHasHit)
+			{
+				crosshair.SetActive(value: true);
+				crosshair.transform.position = arcDisplayCalculator.projectileHitPosition;
+			}
+			else
+			{
+				crosshair.SetActive(value: false);
+			}
+		}
+	}
+
+	private IEnumerator co_recenter(Transform inTransformToRotate, Quaternion inRotationTo, float inRotationSpeed, bool isTower)
+	{
+		float rotationTime = 0f;
+		float num = (isTower ? ((!(inTransformToRotate.eulerAngles.y <= 180f)) ? (360f - inTransformToRotate.eulerAngles.y) : inTransformToRotate.eulerAngles.y) : ((!(inTransformToRotate.eulerAngles.x <= 180f)) ? (360f - inTransformToRotate.eulerAngles.x) : inTransformToRotate.eulerAngles.x));
+		float rotationSpeedMultiplicator = 1f / (num / inRotationSpeed);
+		Quaternion beginRotation = inTransformToRotate.localRotation;
+		while (rotationTime < 1f)
+		{
+			inTransformToRotate.localRotation = Quaternion.Slerp(beginRotation, inRotationTo, rotationTime);
+			rotationTime += Time.deltaTime * rotationSpeedMultiplicator;
+			if (!isTower)
+			{
+				barrelRotation = inTransformToRotate.eulerAngles.x;
+			}
+			fnc_updateArcRotation();
+			yield return null;
+		}
+	}
+}

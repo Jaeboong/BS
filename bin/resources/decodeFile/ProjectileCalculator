@@ -1,0 +1,39 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// ProjectileCalculator
+using UnityEngine;
+
+public class ProjectileCalculator
+{
+	public float fnc_calculateProjectileHeight(float inStartAngle, float inProjectileMass, float inProjectileImpulse)
+	{
+		float num = Mathf.Pow(inProjectileImpulse / inProjectileMass * inStartAngle, 2f);
+		float num2 = 2f * Mathf.Abs(Physics.gravity.y);
+		return num / num2;
+	}
+
+	public Vector2 fnc_calculateXYAtTime(float inStartAngle, float inProjectileMass, float inProjectileImpulse, float inTime)
+	{
+		float num = inProjectileImpulse / inProjectileMass;
+		float x = num * Mathf.Cos(inStartAngle) * inTime;
+		float y = num * Mathf.Sin(inStartAngle) * inTime - Mathf.Abs(Physics.gravity.y * 0.5f) * Mathf.Pow(inTime, 2f);
+		return new Vector2(x, y);
+	}
+
+	public Vector2 fnc_calculateXYAtTime(float inStartVelocity, float inStartAngle, float inTime)
+	{
+		float x = inStartVelocity * Mathf.Cos(inStartAngle) * inTime;
+		float y = inStartVelocity * Mathf.Sin(inStartAngle) * inTime - Mathf.Abs(Physics.gravity.y * 0.5f) * Mathf.Pow(inTime, 2f);
+		return new Vector2(x, y);
+	}
+
+	public float fnc_estimateMaxFlightTime(float inStartAngle, float inProjectileMass, float inProjectileImpulse)
+	{
+		float num = inProjectileImpulse / inProjectileMass;
+		return Mathf.Abs(2f * num * Mathf.Sin(inStartAngle) / Mathf.Abs(Physics.gravity.y));
+	}
+
+	public float fnc_estimateMaxFlightTime(float inStartAngle, float inStartVelocity)
+	{
+		return Mathf.Abs(2f * inStartVelocity * Mathf.Sin(inStartAngle) / Mathf.Abs(Physics.gravity.y));
+	}
+}

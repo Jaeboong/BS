@@ -1,0 +1,68 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// TargetDamageBehaviour
+using UnityEngine;
+using UnityEngine.Events;
+
+public class TargetDamageBehaviour : MonoBehaviour
+{
+	[SerializeField]
+	[Tooltip("Set the maxiumum health of this object")]
+	private float maxHealth = 400f;
+
+	[SerializeField]
+	[Tooltip("Set a particle prefab for an explosion if you want to use it")]
+	private GameObject explosionEffect;
+
+	private float _currentHealth;
+
+	private bool isDestroyed;
+
+	public UnityEvent OnAddedDamage = new UnityEvent();
+
+	public UnityEvent OnDestroyedObject = new UnityEvent();
+
+	public float currentHealth
+	{
+		get
+		{
+			return _currentHealth;
+		}
+		private set
+		{
+			_currentHealth = value;
+		}
+	}
+
+	private void Awake()
+	{
+		currentHealth = maxHealth;
+	}
+
+	public void fnc_addDamage(float inDamage)
+	{
+		if (!isDestroyed)
+		{
+			currentHealth -= inDamage;
+			OnAddedDamage.Invoke();
+			if (currentHealth <= 0f)
+			{
+				currentHealth = 0f;
+				fnc_destroyObject();
+				OnDestroyedObject.Invoke();
+			}
+		}
+	}
+
+	private void fnc_destroyObject()
+	{
+		if (!isDestroyed)
+		{
+			isDestroyed = true;
+			if (explosionEffect != null)
+			{
+				Object.Instantiate(explosionEffect, base.transform.position, base.transform.rotation);
+			}
+			Object.Destroy(base.gameObject);
+		}
+	}
+}

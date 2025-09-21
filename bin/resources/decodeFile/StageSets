@@ -1,0 +1,62 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// StageSets
+using System;
+using UnityEngine;
+
+public class StageSets
+{
+	private int stageNo;
+
+	public StageSets(int stageNo)
+	{
+		this.stageNo = stageNo;
+	}
+
+	public int[] GetSize(int stage)
+	{
+		switch (stage)
+		{
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+			return new int[2] { 8, 8 };
+		case 5:
+			return new int[2] { 10, 10 };
+		case 6:
+			return new int[2] { 16, 16 };
+		case 0:
+			return new int[2] { 16, 16 };
+		default:
+			return new int[2] { 16, 16 };
+		}
+	}
+
+	public int GetMapLength(int stageNo)
+	{
+		return (new int[7] { 4, 1, 5, 5, 5, 5, 4 })[stageNo];
+	}
+
+	public string[,] LoadStageMap(int stageNo, int selection)
+	{
+		int[] size = GetSize(stageNo);
+		string[,] array = new string[size[0], size[1]];
+		string text = $"Maps/stage{stageNo}_map{selection}";
+		TextAsset textAsset = Resources.Load<TextAsset>(text);
+		if (textAsset == null)
+		{
+			Debug.LogError("Map file not found: " + text);
+			return array;
+		}
+		string[] array2 = textAsset.text.Trim().Split('\n');
+		for (int i = 0; i < size[0]; i++)
+		{
+			string[] array3 = array2[i].Trim().Split(new char[2] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+			for (int j = 0; j < size[1]; j++)
+			{
+				array[i, j] = array3[j];
+			}
+		}
+		return array;
+	}
+}

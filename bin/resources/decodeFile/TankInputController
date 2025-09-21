@@ -1,0 +1,87 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// TankInputController
+using UnityEngine;
+
+public class TankInputController : MonoBehaviour
+{
+	[SerializeField]
+	[Tooltip("Set the turretController here")]
+	private GrenadeTurretController turretCntrl;
+
+	[SerializeField]
+	[Tooltip("Set the tankMover component here")]
+	private TankMover tankMover;
+
+	private void Awake()
+	{
+		if (turretCntrl == null)
+		{
+			Debug.LogError("TankInputController: Please set the turretController which you want to control in the inspector.");
+		}
+		else if (tankMover == null)
+		{
+			Debug.LogError("TankInputController: Please set the tankMover which controlls the tank movement here");
+		}
+	}
+
+	private void Update()
+	{
+		if (Input.GetAxis("Mouse X") > 0f || Input.GetAxis("Mouse X") < 0f)
+		{
+			turretCntrl.fnc_rotateTower(Input.GetAxis("Mouse X"));
+		}
+		if (Input.GetAxis("Mouse Y") > 0f || Input.GetAxis("Mouse Y") < 0f)
+		{
+			turretCntrl.fnc_rotateBarrel(Input.GetAxis("Mouse Y"));
+		}
+		if (Input.GetButtonDown("Fire1"))
+		{
+			turretCntrl.fnc_fireGrenade();
+		}
+		if (Input.GetKeyDown(KeyCode.R))
+		{
+			turretCntrl.fnc_reloadGrenades(5);
+		}
+		if (Input.GetButtonDown("Jump"))
+		{
+			turretCntrl.fnc_recenterTurret(inRecenterTower: true, inRecenterBarrel: true);
+		}
+		if (Input.GetKeyDown(KeyCode.Q))
+		{
+			turretCntrl.fnc_recenterTurret(inRecenterTower: true, inRecenterBarrel: false);
+		}
+		if (Input.GetKeyDown(KeyCode.E))
+		{
+			turretCntrl.fnc_recenterTurret(inRecenterTower: false, inRecenterBarrel: true);
+		}
+		if (Input.GetKey(KeyCode.Keypad4) && !Input.GetKey(KeyCode.Keypad6))
+		{
+			turretCntrl.fnc_rotateTower(-1f);
+		}
+		else if (!Input.GetKey(KeyCode.Keypad4) && Input.GetKey(KeyCode.Keypad6))
+		{
+			turretCntrl.fnc_rotateTower(1f);
+		}
+		if (Input.GetKey(KeyCode.Keypad8) && !Input.GetKey(KeyCode.Keypad2))
+		{
+			turretCntrl.fnc_rotateBarrel(1f);
+		}
+		else if (!Input.GetKey(KeyCode.Keypad8) && Input.GetKey(KeyCode.Keypad2))
+		{
+			turretCntrl.fnc_rotateBarrel(-1f);
+		}
+		if (Input.GetKeyDown(KeyCode.T))
+		{
+			if (!turretCntrl.arcDisplayCalculator.showDebugObjects)
+			{
+				turretCntrl.arcDisplayCalculator.fnc_setDisplayStatus(inDisplayStatus: true);
+			}
+			else
+			{
+				turretCntrl.arcDisplayCalculator.fnc_setDisplayStatus(inDisplayStatus: false);
+			}
+		}
+		tankMover.fnc_moveTank(Input.GetAxis("Vertical"));
+		tankMover.fnc_rotateTank(Input.GetAxis("Horizontal"));
+	}
+}

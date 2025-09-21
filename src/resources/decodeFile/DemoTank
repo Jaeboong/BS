@@ -1,0 +1,393 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// DemoTank
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class DemoTank : MonoBehaviour
+{
+	private readonly string UNIQUE_NAME = "TANK";
+
+	public GameObject missilePrefab;
+
+	public GameObject smartMissilePrefab;
+
+	public GameObject blastPrefab;
+
+	public InputField commandInput;
+
+	public GameObject submitButton;
+
+	public int[] currentPosition = new int[2];
+
+	private ACTION action;
+
+	private Vector3 startPosition;
+
+	private Vector3 endPosition;
+
+	private Quaternion startRotation;
+
+	private Quaternion endRotation;
+
+	private int rotating;
+
+	private int rotatingTarget;
+
+	private GameObject missile;
+
+	private int heading = 90;
+
+	private string leftCommand = string.Empty;
+
+	private string leftArgunemt = string.Empty;
+
+	public AudioSource audioSource;
+
+	public AudioClip missileFireClip;
+
+	public AudioClip smartMissileFireClip;
+
+	public AudioClip tankHitClip;
+
+	public AudioClip pivotClip;
+
+	public AudioClip getMissileClip;
+
+	public AudioClip tankDestroyClip;
+
+	public AudioClip getYellowCartClip;
+
+	private void OnEnable()
+	{
+		if (GameManager.manager.GetMode() == MODE.HELP)
+		{
+			ReEnable();
+		}
+	}
+
+	private void FixedUpdate()
+	{
+		if (action == ACTION.ACCEL)
+		{
+			base.transform.position = Vector3.MoveTowards(base.transform.position, endPosition, 1f * Time.deltaTime);
+			if (base.transform.position == endPosition)
+			{
+				action = ACTION.STAY;
+				ReEnable();
+			}
+		}
+		else if (action == ACTION.PIVOT)
+		{
+			if (rotating != 0)
+			{
+				base.transform.rotation = Quaternion.Euler(0f, rotatingTarget + rotating, 0f);
+				if (rotating > 0)
+				{
+					rotating -= 2;
+				}
+				else
+				{
+					rotating += 2;
+				}
+				return;
+			}
+			base.transform.rotation = endRotation;
+			if (leftCommand.Equals(string.Empty))
+			{
+				action = ACTION.STAY;
+				ReEnable();
+				return;
+			}
+			if (leftCommand.Equals("A"))
+			{
+				Accelerate();
+			}
+			else if (leftCommand.Equals("F"))
+			{
+				Fire(leftArgunemt);
+			}
+			else if (leftCommand.Equals("G"))
+			{
+				Decode(leftArgunemt);
+			}
+			else if (leftCommand.Equals("S"))
+			{
+				Stay();
+			}
+			leftCommand = string.Empty;
+			leftArgunemt = string.Empty;
+		}
+		else if (action == ACTION.FIRE)
+		{
+			missile.transform.position = Vector3.MoveTowards(missile.transform.position, endPosition, 3f * Time.deltaTime);
+			if (missile.transform.position == endPosition)
+			{
+				action = ACTION.STAY;
+				ReEnable();
+				Object.Destroy(missile);
+			}
+		}
+		else if (action == ACTION.DECODE)
+		{
+			action = ACTION.STAY;
+			ReEnable();
+		}
+		else if (action == ACTION.HOLD)
+		{
+			action = ACTION.STAY;
+			ReEnable();
+		}
+	}
+
+	public int[] GetFrontPosition()
+	{
+		int num = 0;
+		int num2 = 0;
+		if (heading == 0)
+		{
+			num2 = 1;
+		}
+		else if (heading == 90)
+		{
+			num = 1;
+		}
+		else if (heading == 180)
+		{
+			num2 = -1;
+		}
+		else if (heading == 270)
+		{
+			num = -1;
+		}
+		return new int[2]
+		{
+			currentPosition[0] + num,
+			currentPosition[1] + num2
+		};
+	}
+
+	public int[] GetLastPosition()
+	{
+		int num = 0;
+		int num2 = 0;
+		if (heading == 0)
+		{
+			num2 = 1;
+		}
+		else if (heading == 90)
+		{
+			num = 1;
+		}
+		else if (heading == 180)
+		{
+			num2 = -1;
+		}
+		else if (heading == 270)
+		{
+			num = -1;
+		}
+		return new int[2]
+		{
+			currentPosition[0] + num * 3,
+			currentPosition[1] + num2 * 3
+		};
+	}
+
+	public List<int[]> GetFrontPositions(int range)
+	{
+		int num = 0;
+		int num2 = 0;
+		if (heading == 0)
+		{
+			num2 = 1;
+		}
+		else if (heading == 90)
+		{
+			num = 1;
+		}
+		else if (heading == 180)
+		{
+			num2 = -1;
+		}
+		else if (heading == 270)
+		{
+			num = -1;
+		}
+		List<int[]> list = new List<int[]>();
+		for (int i = 1; i <= range; i++)
+		{
+			int num3 = currentPosition[0] + num * i;
+			int num4 = currentPosition[1] + num2 * i;
+			list.Add(new int[2] { num3, num4 });
+		}
+		return list;
+	}
+
+	public void Accelerate()
+	{
+		int[] frontPosition = GetFrontPosition();
+		Debug.Log($"newPosition: {frontPosition[0]}, {frontPosition[1]}");
+		if (frontPosition[0] >= 0 && frontPosition[0] < 4 && frontPosition[1] >= 0 && frontPosition[1] < 4)
+		{
+			startPosition = new Vector3(currentPosition[0], 0f, currentPosition[1]);
+			currentPosition = frontPosition;
+			endPosition = new Vector3(frontPosition[0], 0f, frontPosition[1]);
+			action = ACTION.ACCEL;
+		}
+		else
+		{
+			ReEnable();
+		}
+	}
+
+	public void Pivot(string direction, string afterCommand, string afterArgument)
+	{
+		leftCommand = afterCommand;
+		leftArgunemt = afterArgument;
+		startRotation = Quaternion.Euler(0f, heading, 0f);
+		int num = heading;
+		if (direction.Equals("U"))
+		{
+			heading = 0;
+		}
+		else if (direction.Equals("R"))
+		{
+			heading = 90;
+		}
+		else if (direction.Equals("D"))
+		{
+			heading = 180;
+		}
+		else if (direction.Equals("L"))
+		{
+			heading = 270;
+		}
+		if (heading < 0)
+		{
+			heading += 360;
+		}
+		else if (heading >= 360)
+		{
+			heading -= 360;
+		}
+		rotating = num - heading;
+		if (rotating > 180)
+		{
+			rotating -= 360;
+		}
+		else if (rotating < -180)
+		{
+			rotating += 360;
+		}
+		endRotation = Quaternion.Euler(0f, heading, 0f);
+		rotatingTarget = heading;
+		action = ACTION.PIVOT;
+	}
+
+	public void Fire(string useMissile)
+	{
+		int[] lastPosition = GetLastPosition();
+		if (useMissile.Equals("M"))
+		{
+			missile = Object.Instantiate(smartMissilePrefab);
+			missile.transform.position = new Vector3(currentPosition[0], 0f, currentPosition[1]);
+			missile.SetActive(value: true);
+			startPosition = missile.transform.position;
+			endPosition = new Vector3(lastPosition[0], 0f, lastPosition[1]);
+			if ((bool)audioSource && (bool)smartMissileFireClip)
+			{
+				audioSource.PlayOneShot(smartMissileFireClip);
+			}
+		}
+		else
+		{
+			missile = Object.Instantiate(missilePrefab);
+			missile.transform.position = new Vector3(currentPosition[0], 0f, currentPosition[1]);
+			missile.SetActive(value: true);
+			startPosition = missile.transform.position;
+			endPosition = new Vector3(lastPosition[0], 0f, lastPosition[1]);
+			if ((bool)audioSource && (bool)missileFireClip)
+			{
+				audioSource.PlayOneShot(missileFireClip);
+			}
+		}
+		GameObject obj = Object.Instantiate(blastPrefab);
+		obj.transform.position = endPosition;
+		obj.SetActive(value: true);
+		action = ACTION.FIRE;
+	}
+
+	public void Decode(string decodedText)
+	{
+		action = ACTION.DECODE;
+	}
+
+	public void Stay()
+	{
+		action = ACTION.HOLD;
+	}
+
+	public void HandleReceivedData(string dataString)
+	{
+		Debug.Log("receiver got " + dataString);
+		if (dataString.Length > 0)
+		{
+			string[] array = ((dataString.Length > 1) ? dataString.Split(' ') : null);
+			if (dataString == null || array == null || dataString.Equals(string.Empty))
+			{
+				array = new string[1] { "NONE" };
+			}
+			string text = ((array.Length > 1) ? array[0] : dataString[0].ToString());
+			string text2 = ((array.Length > 1) ? array[1] : string.Empty);
+			string afterArgument = ((array.Length > 2) ? array[2] : string.Empty);
+			if (text.Equals("U") || text.Equals("D") || text.Equals("L") || text.Equals("R"))
+			{
+				Pivot(text, text2, afterArgument);
+			}
+			else if (text.Equals("A"))
+			{
+				Accelerate();
+			}
+			else if (text.Equals("F"))
+			{
+				Fire(text2);
+			}
+			else if (text.Equals("G") && text2.Length > 0)
+			{
+				Decode(text2);
+			}
+			else if (text.Equals("S"))
+			{
+				Stay();
+			}
+			else
+			{
+				ReEnable();
+			}
+		}
+		else
+		{
+			ReEnable();
+		}
+	}
+
+	public void ClickSubmitButton()
+	{
+		string text = commandInput.text;
+		Debug.Log("userCommand: " + text);
+		if (text.Length > 0)
+		{
+			commandInput.interactable = false;
+			submitButton.GetComponent<Button>().interactable = false;
+			HandleReceivedData(text);
+		}
+	}
+
+	public void ReEnable()
+	{
+		commandInput.text = string.Empty;
+		commandInput.interactable = true;
+		submitButton.GetComponent<Button>().interactable = true;
+	}
+}

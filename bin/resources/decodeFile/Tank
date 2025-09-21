@@ -1,0 +1,1580 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// Tank
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Net.Sockets;
+using System.Text;
+using UnityEngine;
+
+public class Tank : MonoBehaviour
+{
+	private readonly string UNIQUE_NAME = "TANK";
+
+	public GameObject yellowCardUI;
+
+	public GameObject missileNotiUI;
+
+	public GameObject missilePrefab;
+
+	public GameObject smartMissilePrefab;
+
+	public GameObject blastPrefab;
+
+	public string nickname = string.Empty;
+
+	public int playerNo = -1;
+
+	public string side = string.Empty;
+
+	public string enemy = string.Empty;
+
+	public string uniqueName = string.Empty;
+
+	public int health = 100;
+
+	public int heading = 90;
+
+	public int missiles;
+
+	public int smartMissiles;
+
+	public int turn;
+
+	public int yellowCard;
+
+	private GameObject networkController;
+
+	public Socket socket;
+
+	public int clientNo = -1;
+
+	public bool isPlayer;
+
+	public GameObject gameController;
+
+	public GameObject bGameController;
+
+	public GameObject mapController;
+
+	public int[] currentPosition = new int[2];
+
+	private ACTION action;
+
+	private Vector3 startPosition;
+
+	private Vector3 endPosition;
+
+	private Quaternion startRotation;
+
+	private Quaternion endRotation;
+
+	private int rotating;
+
+	private int rotatingTarget;
+
+	private GameObject missile;
+
+	private string command = string.Empty;
+
+	private bool isCommand;
+
+	private int WAITING_SECONDS = 60;
+
+	private DateTime targetTime = DateTime.MaxValue;
+
+	private bool timeCounting;
+
+	private int currentCode;
+
+	private bool onBog;
+
+	private string leftCommand = string.Empty;
+
+	private string leftArgunemt = string.Empty;
+
+	private bool selfDamageOccured;
+
+	public AudioSource audioSource;
+
+	public AudioClip missileFireClip;
+
+	public AudioClip smartMissileFireClip;
+
+	public AudioClip tankHitClip;
+
+	public AudioClip pivotClip;
+
+	public AudioClip getMissileClip;
+
+	public AudioClip tankDestroyClip;
+
+	public AudioClip getYellowCartClip;
+
+	private string[] codeList = new string[45]
+	{
+		"TIMEISGOLD", "SEIZETHEDAY", "NOPAINNOGAIN", "DONTDREAMBEIT", "NOBEESNOHONEY", "NOSWEATNOSWEET", "PASTISJUSTPAST", "FOLLOWYOURHEART", "WHATWILLBEWILLBE", "BELIEVEINYOURSELF",
+		"SEEINGISBELIEVING", "ASKINGCOSTSNOTHING", "DONTDWELLONTHEPAST", "BETTERLATETHANNEVER", "HABITISSECONDNATURE", "LETBYGONESBEBYGONES", "THISTOOSHALLPASSAWAY", "ROMEWASNOTBUILTINADAY", "UNTILDEATHITISALLLIFE", "LIFEISVENTUREORNOTHING",
+		"LIFEITSELFISAQUOTATION", "STEPBYSTEPGOESALONGWAY", "WHATEVERYOUDOMAKEITPAY", "EARLYBIRDCATCHESTHEWORM", "LIFEISFULLOFUPSANDDOWNS", "IFYOUCANTBEATTHEMJOINTHEM", "ONESUTMOSTMOVESTHEHEAVENS", "APOETISTHEPAINTEROFTHESOUL", "AROLLINGSTONEGATHERSNOMOSS", "FAITHWITHOUTDEEDSISUSELESS",
+		"GIVEMELIBERTYORGIVEMEDEATH", "LITTLEBYLITTLEDOESTHETRICK", "LIFEISNOTALLBEERANDSKITTLES", "THEONLYCUREFORGRIEFISACTION", "YOUWILLNEVERKNOWUNTILYOUTRY", "GOODFENCESMAKESGOODNEIGHBORS", "LIVEASIFYOUWERETODIETOMORROW", "NOTHINGVENTUREDNOTHINGGAINED", "THEBEGINNINGISHALFOFTHEWHOLE", "THEREISNOROYALROADTOLEARNING",
+		"WHERETHEREISAWILLTHEREISAWAY", "KNOWLEDGEINYOUTHISWISDOMINAGE", "FORGIVENESSISBETTERTHANREVENGE", "THEDIFFICULTYINLIFEISTHECHOICE", "TRYYOURBESTRATHERTHANBETHEBEST"
+	};
+
+	private string charOrigin = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+	private string charEncoded = "RSTUVWXYZABCDEFGHIJKLMNOPQ";
+
+	private void OnEnable()
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Enabled.");
+		networkController = GameObject.Find("Network Controller");
+		mapController = GameObject.Find("Map Controller");
+		gameController = GameObject.Find("Game Controller");
+		bGameController = GameObject.Find("B Game Controller");
+		leftCommand = string.Empty;
+		leftArgunemt = string.Empty;
+		if (GameManager.manager.GetMode() == MODE.BATTLE)
+		{
+			WAITING_SECONDS = 6;
+		}
+		else
+		{
+			WAITING_SECONDS = 60;
+		}
+	}
+
+	private void Update()
+	{
+		if (isCommand)
+		{
+			isCommand = false;
+			HandleReceivedData(command);
+		}
+	}
+
+	private void FixedUpdate()
+	{
+		if (action == ACTION.ACCEL)
+		{
+			base.transform.position = Vector3.MoveTowards(base.transform.position, endPosition, 1f * Time.deltaTime);
+			if (base.transform.position == endPosition)
+			{
+				action = ACTION.STAY;
+				Debug.Log("[TANK] Stop Signal");
+				if (GetFrontObject().Equals("B"))
+				{
+					GetBogged();
+				}
+				GameManager.manager.SetProceed(PROCEED.STOPPED);
+				GameManager.manager.SetTurnPass(pass: true);
+				Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Move stopped.");
+			}
+		}
+		else if (action == ACTION.PIVOT)
+		{
+			if (rotating != 0)
+			{
+				base.transform.rotation = Quaternion.Euler(0f, rotatingTarget + rotating, 0f);
+				if (rotating > 0)
+				{
+					rotating -= 2;
+				}
+				else
+				{
+					rotating += 2;
+				}
+			}
+			else
+			{
+				base.transform.rotation = endRotation;
+				Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Pivot stopped.");
+				if (leftCommand.Equals(string.Empty))
+				{
+					action = ACTION.STAY;
+					Debug.Log("[TANK] Stop Signal");
+					GameManager.manager.SetProceed(PROCEED.STOPPED);
+					GameManager.manager.SetTurnPass(pass: true);
+					SelfDamaged();
+				}
+				else
+				{
+					action = ACTION.STAY;
+					if (leftCommand.Equals("A"))
+					{
+						Accelerate();
+					}
+					else if (leftCommand.Equals("F"))
+					{
+						Fire(leftArgunemt);
+					}
+					else if (leftCommand.Equals("G"))
+					{
+						Decode(leftArgunemt);
+					}
+					else if (leftCommand.Equals("S"))
+					{
+						Stay();
+					}
+					else
+					{
+						Stay();
+					}
+					leftCommand = string.Empty;
+					leftArgunemt = string.Empty;
+				}
+			}
+		}
+		else if (action == ACTION.LOAD)
+		{
+			Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Loads a missile.");
+			GameManager.manager.SetTurnPass(pass: true);
+		}
+		else if (action == ACTION.FIRE)
+		{
+			missile.transform.position = Vector3.MoveTowards(missile.transform.position, endPosition, 3f * Time.deltaTime);
+			if (missile.transform.position == endPosition)
+			{
+				action = ACTION.STAY;
+				UnityEngine.Object.Destroy(missile);
+				Debug.Log("[TANK] Stop Signal");
+				GameManager.manager.SetProceed(PROCEED.STOPPED);
+				GameManager.manager.SetTurnPass(pass: true);
+				Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Fire stopped.");
+			}
+		}
+		else if (action == ACTION.DECODE)
+		{
+			action = ACTION.STAY;
+			Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Decodes.");
+			Debug.Log("[TANK] Stop Signal");
+			GameManager.manager.SetProceed(PROCEED.STOPPED);
+			GameManager.manager.SetTurnPass(pass: true);
+		}
+		else if (action == ACTION.HOLD)
+		{
+			action = ACTION.STAY;
+			Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Stay.");
+			Debug.Log("[TANK] Stop Signal");
+			GameManager.manager.SetProceed(PROCEED.STOPPED);
+			GameManager.manager.SetTurnPass(pass: true);
+			SelfDamaged();
+		}
+		if (timeCounting && GameManager.manager.GetState() != STATE.PAUSED && targetTime < DateTime.Now)
+		{
+			timeCounting = false;
+			targetTime = DateTime.MaxValue;
+			command = "Time Over";
+			if (GameManager.manager.GetMode() == MODE.BATTLE)
+			{
+				bGameController.GetComponent<BGameController>().timeoutPlayer = playerNo;
+				bGameController.GetComponent<BGameController>().nameOfReason = nickname;
+				bGameController.GetComponent<BGameController>().ForceEnd();
+			}
+			else
+			{
+				gameController.GetComponent<GameController>().ForceEnd();
+			}
+			Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Time over.");
+		}
+	}
+
+	public void SetPlayerNo(int playerNo)
+	{
+		this.playerNo = playerNo;
+		Debug.Log($"[{UNIQUE_NAME}] Player Number is set to {playerNo}");
+	}
+
+	public void SetPlayerNickname(string nickname)
+	{
+		this.nickname = nickname;
+		Debug.Log("[" + UNIQUE_NAME + "] Player Nickname is set to " + nickname);
+	}
+
+	public void InitPlayer(int playerNo, string side, string uniqueName)
+	{
+		mapController = GameObject.Find("Map Controller");
+		gameController = GameObject.Find("Game Controller");
+		bGameController = GameObject.Find("B Game Controller");
+		this.playerNo = playerNo;
+		this.side = side;
+		enemy = (side.Equals("B") ? "A" : "B");
+		this.uniqueName = uniqueName;
+		Debug.Log($"[{UNIQUE_NAME}] Player Initialized.(playerNo: {playerNo}, side: {side}, uniquaName: {uniqueName}");
+	}
+
+	public void InitPlayerStat(int health, int heading, int missiles, int smartMissiles)
+	{
+		this.health = health;
+		this.missiles = missiles;
+		this.smartMissiles = smartMissiles;
+		turn = 0;
+		this.heading = heading;
+		base.transform.rotation = Quaternion.Euler(0f, heading, 0f);
+		Debug.Log($"[{UNIQUE_NAME}] Player Stat Initialized.(health: {health}, heading: {heading}, missiles: {missiles}, smartMissiles: {smartMissiles}");
+	}
+
+	public void InitPlayerPosition(int[] position)
+	{
+		currentPosition = position;
+		Debug.Log($"[{UNIQUE_NAME}] Player Position Initialized.(X: {position[0]}, Y: {position[1]})");
+	}
+
+	public void AssignSocket(int clientNo)
+	{
+		isPlayer = true;
+		this.clientNo = clientNo;
+		socket = networkController.GetComponent<NetworkController>().GetCilent(clientNo);
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Client Socket is mapped with {clientNo}.");
+	}
+
+	public string GetGamedata()
+	{
+		string[,] map = mapController.GetComponent<MapController>().GetMap();
+		int length = map.GetLength(0);
+		int length2 = map.GetLength(1);
+		int num = 0;
+		int num2 = 0;
+		int num3 = FindAround("F");
+		string text = string.Empty;
+		int[] array = new int[6];
+		GameController component = gameController.GetComponent<GameController>();
+		string text2 = string.Empty;
+		string text3 = string.Empty;
+		for (int i = 0; i < map.GetLength(0); i++)
+		{
+			for (int j = 0; j < map.GetLength(1); j++)
+			{
+				string text4 = map[i, j];
+				if (text4.Equals("A1"))
+				{
+					array[0] = component.players[0].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("B1"))
+				{
+					array[1] = component.players[1].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("A2"))
+				{
+					array[2] = component.players[2].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("B2"))
+				{
+					array[3] = component.players[3].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("A3"))
+				{
+					array[4] = component.players[4].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("B3"))
+				{
+					array[5] = component.players[5].GetComponent<Tank>().GetHealth();
+				}
+				if (text4.Equals(uniqueName))
+				{
+					text += "M";
+				}
+				else if (text4.Equals("XA"))
+				{
+					text = ((!side.Equals("A")) ? (text + "X") : (text + "H"));
+				}
+				else if (text4.Equals("XB"))
+				{
+					text = ((!side.Equals("B")) ? (text + "X") : (text + "H"));
+				}
+				else if (text4.Substring(0, 1).Equals(side))
+				{
+					string text5 = "M" + text4.Substring(1);
+					text += text5;
+				}
+				else if (text4.Substring(0, 1).Equals(enemy))
+				{
+					string text6 = "E" + text4.Substring(1);
+					text += text6;
+				}
+				else
+				{
+					text += text4;
+				}
+				if (text4.Substring(0, 1).Equals("A"))
+				{
+					if (side.Equals("A"))
+					{
+						num++;
+						if (!text4.Equals(uniqueName))
+						{
+							if (text4.Equals("A1"))
+							{
+								text2 += $"\nA1 {array[0]}";
+							}
+							else if (text4.Equals("A2"))
+							{
+								text2 += $"\nA2 {array[2]}";
+							}
+							else if (text4.Equals("A3"))
+							{
+								text2 += $"\nA3 {array[4]}";
+							}
+						}
+					}
+					else
+					{
+						num2++;
+						if (text4.Equals("A1"))
+						{
+							text3 += $"\nE1 {array[0]}";
+						}
+						else if (text4.Equals("A2"))
+						{
+							text3 += $"\nE2 {array[2]}";
+						}
+						else if (text4.Equals("A3"))
+						{
+							text3 += $"\nE3 {array[4]}";
+						}
+					}
+				}
+				else if (text4.Substring(0, 1).Equals("B"))
+				{
+					if (side.Equals("B"))
+					{
+						num++;
+						if (!text4.Equals(uniqueName))
+						{
+							if (text4.Equals("B1"))
+							{
+								text2 += $"\nA1 {array[1]}";
+							}
+							else if (text4.Equals("B2"))
+							{
+								text2 += $"\nA2 {array[3]}";
+							}
+							else if (text4.Equals("B3"))
+							{
+								text2 += $"\nA3 {array[5]}";
+							}
+						}
+					}
+					else
+					{
+						num2++;
+						if (text4.Equals("B1"))
+						{
+							text3 += $"\nE1 {array[1]}";
+						}
+						else if (text4.Equals("B2"))
+						{
+							text3 += $"\nE2 {array[3]}";
+						}
+						else if (text4.Equals("B3"))
+						{
+							text3 += $"\nE3 {array[5]}";
+						}
+					}
+				}
+				if (j < map.GetLength(1) - 1)
+				{
+					text += " ";
+				}
+			}
+			if (i < map.GetLength(0) - 1)
+			{
+				text += "\n";
+			}
+		}
+		string text7 = "U";
+		if (heading == 90)
+		{
+			text7 = "R";
+		}
+		if (heading == 180)
+		{
+			text7 = "D";
+		}
+		if (heading == 270)
+		{
+			text7 = "L";
+		}
+		if (component.turretA > 0)
+		{
+			if (side.Equals("A"))
+			{
+				if (GameManager.manager.GetMode() == MODE.BATTLE)
+				{
+					num++;
+				}
+			}
+			else
+			{
+				num2++;
+			}
+		}
+		if (component.turretB > 0)
+		{
+			if (side.Equals("B"))
+			{
+				if (GameManager.manager.GetMode() == MODE.BATTLE)
+				{
+					num++;
+				}
+			}
+			else
+			{
+				num2++;
+			}
+		}
+		string text8 = $"{length} {length2} {num} {num2} {num3}";
+		text8 = text8 + "\n" + text;
+		text8 += $"\nM {health} {text7} {missiles} {smartMissiles}";
+		if (text2.Length > 0)
+		{
+			text8 += text2;
+		}
+		if (GameManager.manager.GetMode() == MODE.BATTLE)
+		{
+			if (side.Equals("A") && component.turretA > 0)
+			{
+				text8 += $"\nH {component.turretA}";
+			}
+			else if (side.Equals("B") && component.turretB > 0)
+			{
+				text8 += $"\nH {component.turretB}";
+			}
+		}
+		if (text3.Length > 0)
+		{
+			text8 += text3;
+		}
+		if (side.Equals("A") && component.turretB > 0)
+		{
+			text8 += $"\nX {component.turretB}";
+		}
+		else if (side.Equals("B") && component.turretA > 0)
+		{
+			text8 += $"\nX {component.turretA}";
+		}
+		if (num3 > 0)
+		{
+			currentCode = UnityEngine.Random.Range(0, codeList.Length);
+			string text9 = codeList[currentCode];
+			string text10 = string.Empty;
+			for (int k = 0; k < text9.Length; k++)
+			{
+				int index = charOrigin.IndexOf(text9[k]);
+				text10 += charEncoded[index];
+			}
+			text8 = text8 + "\n" + text10;
+		}
+		return text8;
+	}
+
+	public string GetBattleGamedata()
+	{
+		string[,] map = mapController.GetComponent<MapController>().GetMap();
+		int length = map.GetLength(0);
+		int length2 = map.GetLength(1);
+		int num = 0;
+		int num2 = 0;
+		int num3 = FindAround("F");
+		string text = string.Empty;
+		int[] array = new int[6];
+		BGameController component = bGameController.GetComponent<BGameController>();
+		string text2 = string.Empty;
+		string text3 = string.Empty;
+		for (int i = 0; i < map.GetLength(0); i++)
+		{
+			for (int j = 0; j < map.GetLength(1); j++)
+			{
+				string text4 = map[i, j];
+				if (text4.Equals("A1"))
+				{
+					array[0] = component.players[0].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("B1"))
+				{
+					array[1] = component.players[1].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("A2"))
+				{
+					array[2] = component.players[2].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("B2"))
+				{
+					array[3] = component.players[3].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("A3"))
+				{
+					array[4] = component.players[4].GetComponent<Tank>().GetHealth();
+				}
+				else if (text4.Equals("B3"))
+				{
+					array[5] = component.players[5].GetComponent<Tank>().GetHealth();
+				}
+				if (text4.Equals(uniqueName))
+				{
+					text += "M";
+				}
+				else if (text4.Equals("XA"))
+				{
+					text = ((!side.Equals("A")) ? (text + "X") : (text + "H"));
+				}
+				else if (text4.Equals("XB"))
+				{
+					text = ((!side.Equals("B")) ? (text + "X") : (text + "H"));
+				}
+				else if (text4.Substring(0, 1).Equals(side))
+				{
+					string text5 = "M" + text4.Substring(1);
+					text += text5;
+				}
+				else if (!text4.Substring(0, 1).Equals(enemy))
+				{
+					text = ((!text4.Equals("G1") && !text4.Equals("G2")) ? (text + text4) : (text + "G"));
+				}
+				else
+				{
+					string text6 = "E" + text4.Substring(1);
+					text += text6;
+				}
+				if (text4.Substring(0, 1).Equals("A"))
+				{
+					if (side.Equals("A"))
+					{
+						num++;
+						if (!text4.Equals(uniqueName))
+						{
+							if (text4.Equals("A1"))
+							{
+								text2 += $"\nM1 {array[0]}";
+							}
+							else if (text4.Equals("A2"))
+							{
+								text2 += $"\nM2 {array[2]}";
+							}
+							else if (text4.Equals("A3"))
+							{
+								text2 += $"\nM3 {array[4]}";
+							}
+						}
+					}
+					else
+					{
+						num2++;
+						if (text4.Equals("A1"))
+						{
+							text3 += $"\nE1 {array[0]}";
+						}
+						else if (text4.Equals("A2"))
+						{
+							text3 += $"\nE2 {array[2]}";
+						}
+						else if (text4.Equals("A3"))
+						{
+							text3 += $"\nE3 {array[4]}";
+						}
+					}
+				}
+				else if (text4.Substring(0, 1).Equals("B"))
+				{
+					if (side.Equals("B"))
+					{
+						num++;
+						if (!text4.Equals(uniqueName))
+						{
+							if (text4.Equals("B1"))
+							{
+								text2 += $"\nM1 {array[1]}";
+							}
+							else if (text4.Equals("B2"))
+							{
+								text2 += $"\nM2 {array[3]}";
+							}
+							else if (text4.Equals("B3"))
+							{
+								text2 += $"\nM3 {array[5]}";
+							}
+						}
+					}
+					else
+					{
+						num2++;
+						if (text4.Equals("B1"))
+						{
+							text3 += $"\nE1 {array[1]}";
+						}
+						else if (text4.Equals("B2"))
+						{
+							text3 += $"\nE2 {array[3]}";
+						}
+						else if (text4.Equals("B3"))
+						{
+							text3 += $"\nE3 {array[5]}";
+						}
+					}
+				}
+				if (j < map.GetLength(1) - 1)
+				{
+					text += " ";
+				}
+			}
+			if (i < map.GetLength(0) - 1)
+			{
+				text += "\n";
+			}
+		}
+		string text7 = "U";
+		if (heading == 90)
+		{
+			text7 = "R";
+		}
+		if (heading == 180)
+		{
+			text7 = "D";
+		}
+		if (heading == 270)
+		{
+			text7 = "L";
+		}
+		if (component.turretA > 0)
+		{
+			if (side.Equals("A"))
+			{
+				if (GameManager.manager.GetMode() == MODE.BATTLE)
+				{
+					num++;
+				}
+			}
+			else
+			{
+				num2++;
+			}
+		}
+		if (component.turretB > 0)
+		{
+			if (side.Equals("B"))
+			{
+				if (GameManager.manager.GetMode() == MODE.BATTLE)
+				{
+					num++;
+				}
+			}
+			else
+			{
+				num2++;
+			}
+		}
+		string text8 = $"{length} {length2} {num} {num2} {num3}";
+		text8 = text8 + "\n" + text;
+		text8 += $"\nM {health} {text7} {missiles} {smartMissiles}";
+		if (text2.Length > 0)
+		{
+			text8 += text2;
+		}
+		if (GameManager.manager.GetMode() == MODE.BATTLE)
+		{
+			if (side.Equals("A") && component.turretA > 0)
+			{
+				text8 += $"\nH {component.turretA}";
+			}
+			else if (side.Equals("B") && component.turretB > 0)
+			{
+				text8 += $"\nH {component.turretB}";
+			}
+		}
+		if (text3.Length > 0)
+		{
+			text8 += text3;
+		}
+		if (side.Equals("A") && component.turretB > 0)
+		{
+			text8 += $"\nX {component.turretB}";
+		}
+		else if (side.Equals("B") && component.turretA > 0)
+		{
+			text8 += $"\nX {component.turretA}";
+		}
+		if (num3 > 0)
+		{
+			currentCode = UnityEngine.Random.Range(0, codeList.Length);
+			string text9 = codeList[currentCode];
+			string text10 = string.Empty;
+			for (int k = 0; k < text9.Length; k++)
+			{
+				int index = charOrigin.IndexOf(text9[k]);
+				text10 += charEncoded[index];
+			}
+			text8 = text8 + "\n" + text10;
+		}
+		return text8;
+	}
+
+	public int[] GetPosition()
+	{
+		return currentPosition;
+	}
+
+	public int[] GetFrontPosition()
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Get Front Position.");
+		int num = 0;
+		int num2 = 0;
+		if (heading == 0)
+		{
+			num2 = 1;
+		}
+		else if (heading == 90)
+		{
+			num = 1;
+		}
+		else if (heading == 180)
+		{
+			num2 = -1;
+		}
+		else if (heading == 270)
+		{
+			num = -1;
+		}
+		return new int[2]
+		{
+			currentPosition[0] + num,
+			currentPosition[1] + num2
+		};
+	}
+
+	public List<int[]> GetFrontPositions(int range)
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Get Front Positions (range: {range})");
+		int num = 0;
+		int num2 = 0;
+		if (heading == 0)
+		{
+			num2 = 1;
+		}
+		else if (heading == 90)
+		{
+			num = 1;
+		}
+		else if (heading == 180)
+		{
+			num2 = -1;
+		}
+		else if (heading == 270)
+		{
+			num = -1;
+		}
+		List<int[]> list = new List<int[]>();
+		for (int i = 1; i <= range; i++)
+		{
+			int num3 = currentPosition[0] + num * i;
+			int num4 = currentPosition[1] + num2 * i;
+			list.Add(new int[2] { num3, num4 });
+		}
+		return list;
+	}
+
+	public string GetFrontObject()
+	{
+		return mapController.GetComponent<MapController>().GetFrontThing(currentPosition[0], currentPosition[1], heading);
+	}
+
+	public string GetTargetObject(int x, int z)
+	{
+		return mapController.GetComponent<MapController>().GetThing(x, z);
+	}
+
+	public int FindAround(string targetCharacter)
+	{
+		MapController component = mapController.GetComponent<MapController>();
+		int num = 0;
+		if (component.GetThing(currentPosition[0] + 1, currentPosition[1]).Equals(targetCharacter))
+		{
+			num++;
+		}
+		else if (component.GetThing(currentPosition[0] - 1, currentPosition[1]).Equals(targetCharacter))
+		{
+			num++;
+		}
+		if (component.GetThing(currentPosition[0], currentPosition[1] + 1).Equals(targetCharacter))
+		{
+			num++;
+		}
+		if (component.GetThing(currentPosition[0], currentPosition[1] - 1).Equals(targetCharacter))
+		{
+			num++;
+		}
+		return num;
+	}
+
+	public void Accelerate()
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Got Accel Command.");
+		bool flag = false;
+		if (GetFrontObject().Equals("G"))
+		{
+			flag = true;
+		}
+		else if (GetFrontObject().Equals("S"))
+		{
+			flag = true;
+		}
+		else if (GetFrontObject().Equals("G1") && side.Equals("B"))
+		{
+			flag = true;
+		}
+		else if (GetFrontObject().Equals("G2") && side.Equals("A"))
+		{
+			flag = true;
+		}
+		if (flag)
+		{
+			int[] position = GetPosition();
+			int[] frontPosition = GetFrontPosition();
+			string t = "G";
+			if (GameManager.manager.GetMode() == MODE.BATTLE)
+			{
+				if (position[0] >= 0 && position[0] <= 2 && position[1] >= 0 && position[1] <= 2)
+				{
+					t = "G1";
+				}
+				else if (position[0] >= 13 && position[0] <= 15 && position[1] >= 13 && position[1] <= 15)
+				{
+					t = "G2";
+				}
+			}
+			mapController.GetComponent<MapController>().SetMap(frontPosition[0], frontPosition[1], uniqueName);
+			mapController.GetComponent<MapController>().SetMap(currentPosition[0], currentPosition[1], t);
+			startPosition = new Vector3(currentPosition[0], 0f, currentPosition[1]);
+			currentPosition = frontPosition;
+			endPosition = new Vector3(frontPosition[0], 0f, frontPosition[1]);
+			Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Accel: {startPosition} to {endPosition}");
+			action = ACTION.ACCEL;
+			GameManager.manager.SetProceed(PROCEED.MOVING);
+			GameManager.manager.SetTurnGoing(pass: true);
+		}
+		else
+		{
+			SelfDamaged();
+			Debug.Log("[TANK] Stop Signal");
+			GameManager.manager.SetProceed(PROCEED.STOPPED);
+			GameManager.manager.SetTurnPass(pass: true);
+		}
+	}
+
+	public void Pivot(string direction, string afterCommand, string afterArgument)
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Got Pivot Command. (with {afterCommand}, {afterArgument})");
+		leftCommand = afterCommand;
+		leftArgunemt = afterArgument;
+		startRotation = Quaternion.Euler(0f, heading, 0f);
+		int num = heading;
+		if (direction.Equals("U"))
+		{
+			heading = 0;
+		}
+		else if (direction.Equals("R"))
+		{
+			heading = 90;
+		}
+		else if (direction.Equals("D"))
+		{
+			heading = 180;
+		}
+		else if (direction.Equals("L"))
+		{
+			heading = 270;
+		}
+		if (heading < 0)
+		{
+			heading += 360;
+		}
+		else if (heading >= 360)
+		{
+			heading -= 360;
+		}
+		rotating = num - heading;
+		if (rotating > 180)
+		{
+			rotating -= 360;
+		}
+		else if (rotating < -180)
+		{
+			rotating += 360;
+		}
+		endRotation = Quaternion.Euler(0f, heading, 0f);
+		rotatingTarget = heading;
+		action = ACTION.PIVOT;
+		if (GameManager.manager.CanPlayBGM() && num != heading && (bool)audioSource && (bool)pivotClip)
+		{
+			audioSource.PlayOneShot(pivotClip);
+		}
+		GameManager.manager.SetProceed(PROCEED.MOVING);
+		GameManager.manager.SetTurnGoing(pass: true);
+	}
+
+	public void Load(string missileType)
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Got Load Command: {missileType}");
+	}
+
+	public void Fire(string missileType)
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Got Fire Command.");
+		string text = string.Empty;
+		if (missileType.Equals("M"))
+		{
+			if (smartMissiles > 0)
+			{
+				text = "M";
+			}
+		}
+		else if (missiles > 0)
+		{
+			text = "N";
+		}
+		if (text.Equals(string.Empty))
+		{
+			Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Missiles not enough.");
+			SelfDamaged();
+			Debug.Log("[TANK] Stop Signal");
+			GameManager.manager.SetProceed(PROCEED.STOPPED);
+			GameManager.manager.SetTurnPass(pass: true);
+			return;
+		}
+		int[] frontPosition = GetFrontPosition();
+		List<int[]> frontPositions = GetFrontPositions(3);
+		if (text.Equals("M"))
+		{
+			missile = UnityEngine.Object.Instantiate(smartMissilePrefab);
+			missile.transform.position = new Vector3(currentPosition[0], 0f, currentPosition[1]);
+			missile.SetActive(value: true);
+			startPosition = missile.transform.position;
+			endPosition = new Vector3(frontPosition[0], 0f, frontPosition[1]);
+			if (GameManager.manager.CanPlayBGM() && (bool)audioSource && (bool)smartMissileFireClip)
+			{
+				audioSource.PlayOneShot(smartMissileFireClip);
+			}
+			smartMissiles--;
+		}
+		else
+		{
+			missile = UnityEngine.Object.Instantiate(missilePrefab);
+			missile.transform.position = new Vector3(currentPosition[0], 0f, currentPosition[1]);
+			missile.SetActive(value: true);
+			startPosition = missile.transform.position;
+			endPosition = new Vector3(frontPosition[0], 0f, frontPosition[1]);
+			if (GameManager.manager.CanPlayBGM() && (bool)audioSource && (bool)missileFireClip)
+			{
+				audioSource.PlayOneShot(missileFireClip);
+			}
+			missiles--;
+		}
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Fire from {startPosition} to {endPosition} in case of range 1");
+		bool flag = false;
+		foreach (int[] item in frontPositions)
+		{
+			string targetObject = GetTargetObject(item[0], item[1]);
+			string text2 = targetObject.Substring(0, 1);
+			endPosition = new Vector3(item[0], 0f, item[1]);
+			GameManager manager = GameManager.manager;
+			if ((side.Equals("A") && text2.Equals("B")) || (side.Equals("B") && text2.Equals("A")))
+			{
+				int damage = 30;
+				if (text.Equals("M"))
+				{
+					damage = 70;
+				}
+				if (manager.GetMode() == MODE.BATTLE)
+				{
+					bGameController.GetComponent<BGameController>().HitPlayer(targetObject, damage);
+				}
+				else
+				{
+					gameController.GetComponent<GameController>().HitPlayer(targetObject, damage);
+				}
+				flag = true;
+				StartCoroutine(TankHitSound());
+				GameObject obj = UnityEngine.Object.Instantiate(blastPrefab);
+				obj.transform.position = endPosition;
+				obj.SetActive(value: true);
+				break;
+			}
+			if (text2.Equals("T") || text2.Equals("X"))
+			{
+				int num = 30;
+				if (text.Equals("M"))
+				{
+					num = 70;
+				}
+				if (manager.GetMode() == MODE.BATTLE)
+				{
+					bGameController.GetComponent<BGameController>().HitPlayer(targetObject, num);
+				}
+				else
+				{
+					gameController.GetComponent<GameController>().HitPlayer(targetObject, num);
+				}
+				flag = true;
+				GameObject obj2 = UnityEngine.Object.Instantiate(blastPrefab);
+				obj2.transform.position = endPosition;
+				obj2.SetActive(value: true);
+				if (targetObject.Equals("T"))
+				{
+					mapController.GetComponent<MapController>().SetMap(item[0], item[1], "G");
+					mapController.GetComponent<MapController>().RemoveThing(item[0], item[1]);
+				}
+				else if (targetObject.Equals("XA"))
+				{
+					int num2 = 99;
+					if (manager.GetMode() == MODE.BATTLE)
+					{
+						bGameController.GetComponent<BGameController>().turretA -= num;
+						num2 = bGameController.GetComponent<BGameController>().turretA;
+					}
+					else
+					{
+						gameController.GetComponent<GameController>().turretA -= num;
+						num2 = gameController.GetComponent<GameController>().turretA;
+					}
+					if (num2 <= 0)
+					{
+						mapController.GetComponent<MapController>().RemoveThing(item[0], item[1]);
+					}
+				}
+				else if (targetObject.Equals("XB"))
+				{
+					int num3 = 99;
+					if (manager.GetMode() == MODE.BATTLE)
+					{
+						bGameController.GetComponent<BGameController>().turretB -= num;
+						num3 = bGameController.GetComponent<BGameController>().turretB;
+					}
+					else
+					{
+						gameController.GetComponent<GameController>().turretB -= num;
+						num3 = gameController.GetComponent<GameController>().turretB;
+					}
+					if (num3 <= 0)
+					{
+						mapController.GetComponent<MapController>().RemoveThing(item[0], item[1]);
+					}
+				}
+				break;
+			}
+			if (text2.Equals("R") || text2.Equals("F"))
+			{
+				endPosition = new Vector3(item[0], 0f, item[1]);
+				break;
+			}
+		}
+		if (!flag)
+		{
+			SelfDamaged();
+		}
+		action = ACTION.FIRE;
+		GameManager.manager.SetProceed(PROCEED.MOVING);
+		GameManager.manager.SetTurnGoing(pass: true);
+	}
+
+	private IEnumerator TankHitSound()
+	{
+		yield return new WaitForSeconds(0.5f);
+		if (GameManager.manager.CanPlayBGM() && (bool)audioSource && (bool)tankHitClip)
+		{
+			audioSource.PlayOneShot(tankHitClip);
+		}
+	}
+
+	public void FireNew(string missileType)
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Got Fire Command.");
+		string text = string.Empty;
+		if (missileType.Equals("M"))
+		{
+			if (smartMissiles > 0)
+			{
+				text = "M";
+			}
+		}
+		else if (missiles > 0)
+		{
+			text = "N";
+		}
+		if (text.Equals(string.Empty))
+		{
+			Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Missiles not enough.");
+			SelfDamaged();
+			Debug.Log("[TANK] Stop Signal");
+			GameManager.manager.SetProceed(PROCEED.STOPPED);
+			GameManager.manager.SetTurnPass(pass: true);
+		}
+		else
+		{
+			List<int[]> frontPositions = GetFrontPositions(3);
+			int num = 0;
+			foreach (int[] item in frontPositions)
+			{
+				num++;
+				string targetObject = GetTargetObject(item[0], item[1]);
+				string text2 = targetObject.Substring(0, 1);
+				endPosition = new Vector3(item[0], 0f, item[1]);
+				if (text2.Equals("R") || text2.Equals("F"))
+				{
+					break;
+				}
+				if ((side.Equals("A") && text2.Equals("B")) || (side.Equals("B") && text2.Equals("A")) || text2.Equals("T") || text2.Equals("X"))
+				{
+					StartCoroutine(DelayedBlastAndDamage(endPosition, targetObject, text2, side, text.Equals("M"), item[0], item[1], num));
+					break;
+				}
+			}
+		}
+		action = ACTION.FIRE;
+		GameManager.manager.SetProceed(PROCEED.MOVING);
+		GameManager.manager.SetTurnGoing(pass: true);
+	}
+
+	private IEnumerator DelayedBlastAndDamage(Vector3 position, string targetObject, string targetLetter, string side, bool isSmart, int x, int z, int distance)
+	{
+		float seconds = (float)distance * 0.2f;
+		yield return new WaitForSeconds(seconds);
+		int damage = (isSmart ? 70 : 30);
+		GameManager manager = GameManager.manager;
+		if ((side.Equals("A") && targetLetter.Equals("B")) || (side.Equals("B") && targetLetter.Equals("A")) || targetLetter.Equals("T") || targetLetter.Equals("X"))
+		{
+			if (manager.GetMode() == MODE.BATTLE)
+			{
+				bGameController.GetComponent<BGameController>().HitPlayer(targetObject, damage);
+			}
+			else
+			{
+				gameController.GetComponent<GameController>().HitPlayer(targetObject, damage);
+			}
+			GameObject obj = UnityEngine.Object.Instantiate(blastPrefab);
+			obj.transform.position = position;
+			obj.SetActive(value: true);
+		}
+		else if (targetLetter.Equals("T"))
+		{
+			mapController.GetComponent<MapController>().SetMap(x, z, "G");
+			mapController.GetComponent<MapController>().RemoveThing(x, z);
+		}
+		else if (targetObject.Equals("XA"))
+		{
+			int turretA;
+			if (manager.GetMode() == MODE.BATTLE)
+			{
+				bGameController.GetComponent<BGameController>().turretA -= 10;
+				turretA = bGameController.GetComponent<BGameController>().turretA;
+			}
+			else
+			{
+				gameController.GetComponent<GameController>().turretA -= 10;
+				turretA = gameController.GetComponent<GameController>().turretA;
+			}
+			if (turretA <= 0)
+			{
+				mapController.GetComponent<MapController>().RemoveThing(x, z);
+			}
+		}
+		else if (targetObject.Equals("XB"))
+		{
+			int turretB;
+			if (manager.GetMode() == MODE.BATTLE)
+			{
+				bGameController.GetComponent<BGameController>().turretB -= 10;
+				turretB = bGameController.GetComponent<BGameController>().turretB;
+			}
+			else
+			{
+				gameController.GetComponent<GameController>().turretA -= 10;
+				turretB = gameController.GetComponent<GameController>().turretB;
+			}
+			if (turretB <= 0)
+			{
+				mapController.GetComponent<MapController>().RemoveThing(x, z);
+			}
+		}
+	}
+
+	public void Decode(string decodedText)
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Got Decode Command.");
+		if (FindAround("F") > 0 && decodedText.Equals(codeList[currentCode]))
+		{
+			StartCoroutine(DecodeSequence());
+		}
+		action = ACTION.DECODE;
+		GameManager.manager.SetProceed(PROCEED.MOVING);
+		GameManager.manager.SetTurnGoing(pass: true);
+	}
+
+	private IEnumerator DecodeSequence()
+	{
+		if (smartMissiles >= 10)
+		{
+			SelfDamaged();
+			yield break;
+		}
+		if ((bool)missileNotiUI)
+		{
+			foreach (Transform item in missileNotiUI.transform)
+			{
+				bool active = (heading == 0 && item.name == "Canvas_U") || (heading == 90 && item.name == "Canvas_R") || (heading == 180 && item.name == "Canvas_D") || (heading == 270 && item.name == "Canvas_L");
+				item.gameObject.SetActive(active);
+			}
+			missileNotiUI.SetActive(value: true);
+		}
+		if (GameManager.manager.CanPlayBGM() && (bool)audioSource && (bool)getMissileClip)
+		{
+			audioSource.PlayOneShot(getMissileClip);
+		}
+		yield return new WaitForSeconds(1f);
+		if ((bool)missileNotiUI)
+		{
+			missileNotiUI.SetActive(value: false);
+		}
+		smartMissiles++;
+	}
+
+	public void Stay()
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Got Stay Command.");
+		action = ACTION.HOLD;
+		GameManager.manager.SetProceed(PROCEED.MOVING);
+		GameManager.manager.SetTurnGoing(pass: true);
+	}
+
+	public void CheckConnection()
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Resend.");
+		SendMapToClient();
+	}
+
+	public void SendMapToClient()
+	{
+		try
+		{
+			if (GameManager.manager.GetMode() == MODE.BATTLE)
+			{
+				string battleGamedata = GetBattleGamedata();
+				SendToClient(battleGamedata);
+				ReceiveFromClient();
+			}
+			else
+			{
+				string gamedata = GetGamedata();
+				SendToClient(gamedata);
+				ReceiveFromClient();
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.Log(ex.ToString());
+		}
+	}
+
+	public void SendEndSignal()
+	{
+		SendToClient("0 0 0 0 0");
+	}
+
+	public void SendToClient(string sendData)
+	{
+		AsyncObject asyncObject = new AsyncObject(1024);
+		asyncObject.workingSocket = socket;
+		byte[] bytes = Encoding.UTF8.GetBytes(sendData);
+		socket.BeginSend(bytes, 0, bytes.Length, SocketFlags.None, DataSent, asyncObject);
+	}
+
+	private void DataSent(IAsyncResult ar)
+	{
+		((AsyncObject)ar.AsyncState).workingSocket.EndSend(ar);
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Host data has been sent.");
+		targetTime = DateTime.Now.AddSeconds(WAITING_SECONDS);
+		timeCounting = true;
+	}
+
+	public void ReceiveFromClient()
+	{
+		AsyncObject asyncObject = new AsyncObject(1024);
+		asyncObject.workingSocket = socket;
+		socket.BeginReceive(asyncObject.buffer, 0, 1024, SocketFlags.None, DataReceived, asyncObject);
+	}
+
+	private void DataReceived(IAsyncResult ar)
+	{
+		AsyncObject obj = (AsyncObject)ar.AsyncState;
+		int num = obj.workingSocket.EndReceive(ar);
+		timeCounting = false;
+		targetTime = DateTime.MaxValue;
+		byte[] array = new byte[num];
+		Array.Copy(obj.buffer, array, num);
+		string text = Encoding.UTF8.GetString(array);
+		obj.ClearBuffer();
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Data has been received from Client. (" + text + ")");
+		SetCommand(text);
+	}
+
+	private void HandleReceivedData(string dataString)
+	{
+		Debug.Log($"[{UNIQUE_NAME}][{playerNo}] HandleReceived called with dataString: {dataString}({dataString.Length})");
+		if (dataString.Length > 0)
+		{
+			string[] array = ((dataString.Length > 1) ? dataString.Split(' ') : null);
+			if (dataString == null || array == null || dataString.Equals(string.Empty))
+			{
+				array = new string[1] { "NONE" };
+			}
+			string text = ((array.Length > 1) ? array[0] : dataString[0].ToString());
+			string text2 = ((array.Length > 1) ? array[1] : string.Empty);
+			string afterArgument = ((array.Length > 2) ? array[2] : string.Empty);
+			Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Received command: {text}, argument: {text2}");
+			if (text.Equals("INIT") && text2.Length > 0)
+			{
+				SetPlayerNickname((text2.Length > 12) ? text2.Substring(0, 12) : text2);
+			}
+			else if (text.Equals("U") || text.Equals("D") || text.Equals("L") || text.Equals("R"))
+			{
+				turn++;
+				Pivot(text, text2, afterArgument);
+			}
+			else if (text.Equals("A"))
+			{
+				turn++;
+				Accelerate();
+			}
+			else if (text.Equals("F"))
+			{
+				turn++;
+				Fire(text2);
+			}
+			else if (text.Equals("G") && text2.Length > 0)
+			{
+				turn++;
+				Decode(text2);
+			}
+			else if (text.Equals("S"))
+			{
+				turn++;
+				Stay();
+			}
+			else
+			{
+				turn++;
+				Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Received data is not properly readable:" + dataString);
+				Stay();
+			}
+		}
+		else
+		{
+			if (GameManager.manager.GetMode() == MODE.BATTLE)
+			{
+				bGameController.GetComponent<BGameController>().disconnectedPlayer = playerNo;
+				bGameController.GetComponent<BGameController>().nameOfReason = nickname;
+				bGameController.GetComponent<BGameController>().ForceEnd();
+			}
+			else
+			{
+				gameController.GetComponent<GameController>().ForceEnd();
+			}
+			Debug.Log($"[{UNIQUE_NAME}][{playerNo}] Disconnected.");
+		}
+	}
+
+	public void SelfDamaged()
+	{
+		if (GameManager.manager.GetMode() == MODE.BATTLE)
+		{
+			StartCoroutine(SelfDamageSequence());
+		}
+		Debug.Log("Self Damaged!!");
+	}
+
+	private IEnumerator SelfDamageSequence()
+	{
+		GameManager gameManager = GameManager.manager;
+		if ((bool)yellowCardUI)
+		{
+			yellowCardUI.SetActive(value: true);
+			GameObject gameObject = yellowCardUI.transform.Find("Canvas_H")?.gameObject;
+			GameObject gameObject2 = yellowCardUI.transform.Find("Canvas_V")?.gameObject;
+			if (gameObject != null && gameObject2 != null)
+			{
+				if (heading == 0 || heading == 180)
+				{
+					gameObject.SetActive(value: false);
+					gameObject2.SetActive(value: true);
+				}
+				else
+				{
+					gameObject.SetActive(value: true);
+					gameObject2.SetActive(value: false);
+				}
+			}
+		}
+		if (GameManager.manager.CanPlayBGM() && (bool)audioSource && (bool)getYellowCartClip)
+		{
+			audioSource.PlayOneShot(getYellowCartClip);
+		}
+		yield return new WaitForSeconds(0.5f);
+		if ((bool)yellowCardUI)
+		{
+			yellowCardUI.SetActive(value: false);
+		}
+		yellowCard++;
+		if (yellowCard >= 3)
+		{
+			health = 0;
+		}
+		if (health <= 0)
+		{
+			if (GameManager.manager.CanPlayBGM() && (bool)audioSource && (bool)tankDestroyClip)
+			{
+				audioSource.PlayOneShot(tankDestroyClip);
+			}
+			if (gameManager.GetMode() == MODE.BATTLE)
+			{
+				bGameController.GetComponent<BGameController>().HitPlayer(uniqueName, 0);
+			}
+			else
+			{
+				gameController.GetComponent<GameController>().ForceEnd();
+			}
+		}
+	}
+
+	public void GetBogged()
+	{
+		if (GameManager.manager.GetMode() == MODE.BATTLE)
+		{
+			health -= 10;
+		}
+		Debug.Log("Get Bogged!!");
+	}
+
+	public string GetCommand()
+	{
+		return command;
+	}
+
+	public bool IsCommanded()
+	{
+		return isCommand;
+	}
+
+	public void SetCommand(string command)
+	{
+		this.command = command;
+		isCommand = true;
+	}
+
+	public void ClearCommand()
+	{
+		command = string.Empty;
+		isCommand = false;
+	}
+
+	public int GetHealth()
+	{
+		return health;
+	}
+}

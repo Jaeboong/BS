@@ -1,0 +1,333 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// AutoMatchManager
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+
+public class AutoMatchManager : MonoBehaviour
+{
+	public GameObject autoMessageBox;
+
+	public Text autoText;
+
+	public List<MatchGroup> MatchGroups = new List<MatchGroup>();
+
+	private int currentMatchIndex;
+
+	private string currentResultFilePath;
+
+	public static AutoMatchManager Instance { get; private set; }
+
+	public bool AutoModeEnabled { get; private set; }
+
+	private void Awake()
+	{
+		if (Instance != null && Instance != this)
+		{
+			UnityEngine.Object.Destroy(base.gameObject);
+			return;
+		}
+		Instance = this;
+		UnityEngine.Object.DontDestroyOnLoad(base.gameObject);
+	}
+
+	private void Start()
+	{
+		GameObject gameObject = GameObject.Find("AutoMessageBox");
+		if (gameObject != null)
+		{
+			gameObject.SetActive(value: false);
+			Debug.Log("[Init] AutoMessageBox 초기 숨김 처리 완료");
+		}
+	}
+
+	private void OnEnable()
+	{
+		Debug.Log("[AutoMatchManager] OnEnable");
+		SceneManager.sceneLoaded += OnSceneLoaded;
+		if (AutoModeEnabled)
+		{
+			Debug.Log("[AutoMatchManager] AutoModeEnabled is true on enable");
+			if (autoMessageBox != null)
+			{
+				autoMessageBox.SetActive(value: true);
+				Debug.Log("[AutoMatchManager] AutoMessageBox activated in OnEnable");
+			}
+			if (autoText != null && currentMatchIndex < MatchGroups.Count)
+			{
+				MatchGroup matchGroup = MatchGroups[currentMatchIndex];
+				autoText.text = $"[Match {matchGroup.MatchID}] 시뮬레이션 진행 중입니다...";
+				Debug.Log("[AutoMatchManager] AutoText updated in OnEnable");
+			}
+		}
+	}
+
+	public void OnClickCloseBoxButton()
+	{
+		autoMessageBox = GameObject.Find("AutoMessageBox");
+		if (autoMessageBox != null)
+		{
+			autoMessageBox.SetActive(value: false);
+		}
+	}
+
+	private void OnDisable()
+	{
+		SceneManager.sceneLoaded -= OnSceneLoaded;
+	}
+
+	private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+	{
+		Debug.Log($"[AutoMatchManager] Scene Loaded: {scene.name}, AutoModeEnabled={AutoModeEnabled}");
+		if (!AutoModeEnabled || !(scene.name == "BattleScene"))
+		{
+			return;
+		}
+		Debug.Log("[AutoMatchManager] Reacquiring AutoMessageBox in BattleScene");
+		autoMessageBox = GameObject.Find("AutoMessageBox");
+		if (autoMessageBox != null)
+		{
+			Debug.Log("[AutoMatchManager] AutoMessageBox found! Activating...");
+			autoMessageBox.SetActive(value: true);
+			Transform transform = autoMessageBox.transform.Find("AutoText");
+			if (transform != null)
+			{
+				Debug.Log("[AutoMatchManager] AutoText found. Setting match text...");
+				autoText = transform.GetComponent<Text>();
+				if (currentMatchIndex < MatchGroups.Count)
+				{
+					MatchGroup matchGroup = MatchGroups[currentMatchIndex];
+					autoText.text = $"[Match {matchGroup.MatchID}] 시뮬레이션 진행 중입니다...";
+				}
+				else
+				{
+					autoText.text = "모든 대진이 종료되었습니다.";
+				}
+			}
+			else
+			{
+				Debug.LogWarning("[AutoMatchManager] AutoText not found inside AutoMessageBox");
+			}
+		}
+		else
+		{
+			Debug.LogWarning("[AutoMatchManager] AutoMessageBox not found in BattleScene");
+		}
+	}
+
+	public void UpdateMatchText(string message)
+	{
+		if (autoMessageBox == null)
+		{
+			autoMessageBox = GameObject.Find("AutoMessageBox");
+		}
+		if (autoMessageBox != null)
+		{
+			autoMessageBox.SetActive(value: true);
+			if (autoText == null)
+			{
+				autoText = autoMessageBox.transform.Find("AutoText")?.GetComponent<Text>();
+			}
+			if (autoText != null)
+			{
+				autoText.text = message;
+			}
+		}
+	}
+
+	public void EnableAutoMode()
+	{
+		AutoModeEnabled = true;
+		currentMatchIndex = 0;
+		string text = Path.Combine(Application.dataPath, "../Results");
+		Directory.CreateDirectory(text);
+		string text2 = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+		currentResultFilePath = Path.Combine(text, "results_" + text2 + ".csv");
+		Debug.Log("[AutoMatchManager] Auto mode enabled. Result file: " + currentResultFilePath);
+		LoadNextMatch();
+	}
+
+	public void SetMatchGroups(List<MatchGroup> groups)
+	{
+		MatchGroups = groups;
+	}
+
+	public void LoadNextMatch()
+	{
+		if (!AutoModeEnabled || currentMatchIndex >= MatchGroups.Count)
+		{
+			Debug.Log("All matches finished.");
+			AutoModeEnabled = false;
+			return;
+		}
+		MatchGroup matchGroup = MatchGroups[currentMatchIndex];
+		currentMatchIndex++;
+		if (autoMessageBox != null)
+		{
+			autoMessageBox.SetActive(value: true);
+		}
+		if (autoText != null)
+		{
+			autoText.text = $"[Match {matchGroup.MatchID}] 시뮬레이션 진행 중입니다...";
+		}
+		StartCoroutine(RunMatch(matchGroup));
+	}
+
+	private IEnumerator RunMatch(MatchGroup match)
+	{
+		Debug.Log("Running match ID: " + match.MatchID);
+		yield return BuildAndRunTeams(match.TeamAPaths, match.TeamBPaths);
+		int expectedPlayerCount = match.TeamAPaths.Count + match.TeamBPaths.Count;
+		Debug.Log($"Waiting for {expectedPlayerCount} players to connect...");
+		yield return new WaitUntil(delegate
+		{
+			BattleController battleController = UnityEngine.Object.FindObjectOfType<BattleController>();
+			return battleController != null && battleController.playerJoinNo >= expectedPlayerCount;
+		});
+		Debug.Log("All players connected. Loading PlayBattleScene...");
+		GameManager.manager.IsAutoMode = true;
+		SceneManager.LoadScene("PlayBattleScene");
+		yield return new WaitUntil(() => GameManager.manager != null && GameManager.manager.GameFinished);
+		string matchWinner = GameManager.manager.MatchWinner;
+		string endReason = GameManager.manager.EndReason;
+		Debug.Log($"[RESULT] Match #{match.MatchID}: {matchWinner} 승 - {endReason}");
+		SaveResultToCSV(match);
+		if (autoText != null)
+		{
+			autoText.text = "시뮬레이션이 종료되었습니다.";
+		}
+		yield return new WaitForSecondsRealtime(1f);
+		SceneManager.LoadScene("BattleScene");
+		StartCoroutine(WaitForSceneAndStartNextMatch());
+	}
+
+	private IEnumerator WaitForSceneAndStartNextMatch()
+	{
+		yield return new WaitUntil(() => SceneManager.GetActiveScene().name == "BattleScene");
+		yield return new WaitUntil(() => UnityEngine.Object.FindObjectOfType<DragDropFileHandler>() != null);
+		GameManager.manager.ResetMatchResult();
+		LoadNextMatch();
+	}
+
+	private void SaveResultToCSV(MatchGroup match)
+	{
+		if (string.IsNullOrEmpty(currentResultFilePath))
+		{
+			Debug.LogError("[SaveResultToCSV] currentResultFilePath가 설정되지 않았습니다.");
+			return;
+		}
+		bool flag = !File.Exists(currentResultFilePath);
+		UTF8Encoding encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+		using (StreamWriter streamWriter = new StreamWriter(currentResultFilePath, append: true, encoding))
+		{
+			if (flag)
+			{
+				streamWriter.WriteLine("MatchID,Winner,Reason");
+			}
+			string value = $"{match.MatchID},{GameManager.manager.MatchWinner},{GameManager.manager.EndReason}";
+			streamWriter.WriteLine(value);
+		}
+		Debug.Log($"[CSV SAVED] Match #{match.MatchID} 결과가 CSV로 저장되었습니다.");
+	}
+
+	[DllImport("user32.dll", CharSet = CharSet.Auto)]
+	private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+	private IEnumerator BuildAndRunTeams(List<string> teamA, List<string> teamB)
+	{
+		DragDropFileHandler handler = UnityEngine.Object.FindObjectOfType<DragDropFileHandler>();
+		if (handler == null)
+		{
+			Debug.LogError("DragDropFileHandler not found in scene!");
+			yield break;
+		}
+		List<string> list = new List<string>();
+		int num = Mathf.Max(teamA.Count, teamB.Count);
+		for (int i = 0; i < num; i++)
+		{
+			if (i < teamA.Count)
+			{
+				list.Add(teamA[i]);
+			}
+			if (i < teamB.Count)
+			{
+				list.Add(teamB[i]);
+			}
+		}
+		foreach (string item in list)
+		{
+			string fullPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+			string exePath = Path.Combine(fullPath, "ExternalTools", "python", "python.exe");
+			string exePath2 = Path.Combine(fullPath, "ExternalTools", "mingw64", "bin", "gcc.exe");
+			string exePath3 = Path.Combine(fullPath, "ExternalTools", "mingw64", "bin", "g++.exe");
+			string exePath4 = Path.Combine(fullPath, "ExternalTools", "jdk", "bin", "javac.exe");
+			string exePath5 = Path.Combine(fullPath, "ExternalTools", "jdk", "bin", "java.exe");
+			string fullPath2 = Path.GetFullPath(item.Replace("\\", "/"));
+			string directoryName = Path.GetDirectoryName(fullPath2);
+			string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fullPath2);
+			string text = Path.GetExtension(fullPath2).ToLower();
+			Debug.Log("[RUN] Player: " + fileNameWithoutExtension + ", Type: " + text);
+			switch (text)
+			{
+			case ".c":
+			{
+				string text4 = fullPath2;
+				string fileNameWithoutExtension4 = Path.GetFileNameWithoutExtension(text4);
+				string text5 = Path.Combine(directoryName, fileNameWithoutExtension4 + ".exe");
+				if (handler.RunCommandBlocking(exePath2, "\"" + text4 + "\" -o \"" + text5 + "\" -static -lws2_32", directoryName))
+				{
+					handler.RunCommand(text5, "", directoryName);
+				}
+				else
+				{
+					MessageBox(IntPtr.Zero, "빌드에 실패했습니다.", "에러", 0u);
+				}
+				break;
+			}
+			case ".cpp":
+			{
+				string text2 = fullPath2;
+				string fileNameWithoutExtension3 = Path.GetFileNameWithoutExtension(text2);
+				string text3 = Path.Combine(directoryName, fileNameWithoutExtension3 + ".exe");
+				if (handler.RunCommandBlocking(exePath3, "\"" + text2 + "\" -o \"" + text3 + "\" -static -lws2_32", directoryName))
+				{
+					handler.RunCommand(text3, "", directoryName);
+				}
+				else
+				{
+					MessageBox(IntPtr.Zero, "빌드에 실패했습니다.", "에러", 0u);
+				}
+				break;
+			}
+			case ".java":
+			{
+				string directoryName2 = Path.GetDirectoryName(fullPath2);
+				string fileNameWithoutExtension2 = Path.GetFileNameWithoutExtension(fullPath2);
+				if (handler.RunCommandBlocking(exePath4, "-encoding UTF-8 \"" + fullPath2 + "\"", directoryName2))
+				{
+					handler.RunCommand(exePath5, "-cp \"" + directoryName2 + "\" " + fileNameWithoutExtension2, directoryName2);
+				}
+				else
+				{
+					MessageBox(IntPtr.Zero, "빌드에 실패했습니다.", "에러", 0u);
+				}
+				break;
+			}
+			case ".py":
+				handler.RunCommand(exePath, "\"" + fullPath2 + "\"", directoryName);
+				break;
+			default:
+				Debug.LogWarning("[RUN] Unsupported file: " + fullPath2);
+				break;
+			}
+			yield return new WaitForSeconds(0.5f);
+		}
+		yield return null;
+	}
+}

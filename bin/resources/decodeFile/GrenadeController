@@ -1,0 +1,307 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// GrenadeController
+using UnityEngine;
+
+[RequireComponent(typeof(Rigidbody))]
+[RequireComponent(typeof(CapsuleCollider))]
+public class GrenadeController : MonoBehaviour
+{
+	public GameObject grenadeModel;
+
+	public float launchImpulseForce = 100f;
+
+	public float grenadeLifeTime = 10f;
+
+	public float timeTillArmed = 0.5f;
+
+	public float maxExplosionDamage = 200f;
+
+	public bool useAOEDamage = true;
+
+	public float explosionRadius = 200f;
+
+	public bool useAOEMultiplicator = true;
+
+	public float aoeMultiplicator = 1f;
+
+	public string[] tagsToExplodeOnCollision = new string[2] { "Enemy", "Target" };
+
+	public string[] tagsToIgnoreOnCollision = new string[1] { "Turret" };
+
+	public bool useExplosionEffect = true;
+
+	public GameObject explosionEffectPrefab;
+
+	public Transform transformGrenadeSpawn;
+
+	private bool _currentlyActive;
+
+	private bool _explosionTriggered;
+
+	private float _lifeTimeLeft;
+
+	private float armTime;
+
+	private bool isArmed;
+
+	private bool isSetup;
+
+	private bool isPoolGrenade;
+
+	private string objectTag = "Grenade";
+
+	private Rigidbody rbGrenade;
+
+	private CapsuleCollider collGrenade;
+
+	public bool currentlyActive
+	{
+		get
+		{
+			return _currentlyActive;
+		}
+		private set
+		{
+			_currentlyActive = value;
+		}
+	}
+
+	public bool explosionTriggered
+	{
+		get
+		{
+			return _explosionTriggered;
+		}
+		private set
+		{
+			_explosionTriggered = value;
+		}
+	}
+
+	public float lifeTimeLeft
+	{
+		get
+		{
+			return _lifeTimeLeft;
+		}
+		private set
+		{
+			_lifeTimeLeft = value;
+		}
+	}
+
+	private void Awake()
+	{
+		rbGrenade = base.gameObject.GetComponent<Rigidbody>();
+		if (rbGrenade == null)
+		{
+			Debug.LogError("GrenadeController: No Rigidbody found on the gameObject.");
+			return;
+		}
+		rbGrenade.drag = 0f;
+		rbGrenade.angularDrag = 0f;
+		rbGrenade.isKinematic = true;
+		collGrenade = base.gameObject.GetComponent<CapsuleCollider>();
+		if (rbGrenade == null)
+		{
+			Debug.LogError("GrenadeController: No CapsuleCollider found on the gameObject.");
+			return;
+		}
+		collGrenade.isTrigger = true;
+		if (grenadeModel != null)
+		{
+			grenadeModel.SetActive(value: false);
+		}
+		base.gameObject.tag = objectTag;
+		Transform[] componentsInChildren = base.gameObject.GetComponentsInChildren<Transform>();
+		for (int i = 0; i < componentsInChildren.Length; i++)
+		{
+			componentsInChildren[i].tag = objectTag;
+		}
+	}
+
+	private void Update()
+	{
+		if (!isSetup || !currentlyActive || explosionTriggered)
+		{
+			return;
+		}
+		lifeTimeLeft -= Time.deltaTime;
+		if (!isArmed)
+		{
+			armTime += Time.deltaTime;
+			if (armTime >= timeTillArmed)
+			{
+				isArmed = true;
+			}
+		}
+		if (lifeTimeLeft <= 0f)
+		{
+			fnc_explodeGrenade();
+		}
+	}
+
+	private void FixedUpdate()
+	{
+		if (isSetup && currentlyActive && !explosionTriggered && rbGrenade.velocity.normalized != Vector3.zero)
+		{
+			base.transform.forward = rbGrenade.velocity.normalized;
+		}
+	}
+
+	private void OnEnable()
+	{
+		fnc_startGrenade();
+	}
+
+	private void OnDisable()
+	{
+		fnc_stopGrenade();
+	}
+
+	private void OnTriggerEnter(Collider coll)
+	{
+		if (!currentlyActive || explosionTriggered || !isArmed)
+		{
+			return;
+		}
+		string b = coll.tag;
+		if (tagsToIgnoreOnCollision.Length != 0)
+		{
+			for (int i = 0; i < tagsToIgnoreOnCollision.Length; i++)
+			{
+				if (string.Equals(tagsToIgnoreOnCollision[i], b))
+				{
+					return;
+				}
+			}
+		}
+		if (tagsToExplodeOnCollision.Length == 0)
+		{
+			return;
+		}
+		for (int j = 0; j < tagsToExplodeOnCollision.Length; j++)
+		{
+			if (string.Equals(tagsToExplodeOnCollision[j], b))
+			{
+				if (useAOEDamage)
+				{
+					fnc_explodeGrenade();
+				}
+				else
+				{
+					fnc_explodeGrenade(coll.gameObject);
+				}
+				break;
+			}
+		}
+	}
+
+	public void fnc_setupGrenade(bool inIsPoolGrenade, Transform inGrenadeSpawn)
+	{
+		if (!isSetup)
+		{
+			isPoolGrenade = inIsPoolGrenade;
+			transformGrenadeSpawn = inGrenadeSpawn;
+			isSetup = true;
+			if (!isPoolGrenade)
+			{
+				fnc_startGrenade();
+			}
+		}
+	}
+
+	private void fnc_startGrenade()
+	{
+		if (isSetup)
+		{
+			lifeTimeLeft = grenadeLifeTime;
+			armTime = 0f;
+			isArmed = false;
+			currentlyActive = true;
+			explosionTriggered = false;
+			if (grenadeModel != null)
+			{
+				grenadeModel.SetActive(value: true);
+			}
+			base.gameObject.transform.position = transformGrenadeSpawn.position;
+			base.gameObject.transform.rotation = transformGrenadeSpawn.rotation;
+			rbGrenade.isKinematic = false;
+			rbGrenade.AddForce(base.transform.forward * launchImpulseForce, ForceMode.Impulse);
+		}
+	}
+
+	private void fnc_stopGrenade()
+	{
+		if (isSetup)
+		{
+			currentlyActive = false;
+			if (grenadeModel != null)
+			{
+				grenadeModel.SetActive(value: false);
+			}
+			rbGrenade.isKinematic = true;
+			rbGrenade.velocity = Vector3.zero;
+			base.gameObject.SetActive(value: false);
+		}
+	}
+
+	private void fnc_explodeGrenade(GameObject inHitGo)
+	{
+		if (isSetup && currentlyActive)
+		{
+			explosionTriggered = true;
+			if (explosionEffectPrefab != null)
+			{
+				Object.Instantiate(explosionEffectPrefab, base.transform.position, base.transform.rotation);
+			}
+			if (inHitGo.GetComponent<TargetDamageBehaviour>() != null)
+			{
+				inHitGo.GetComponent<TargetDamageBehaviour>().fnc_addDamage(maxExplosionDamage);
+			}
+			fnc_stopGrenade();
+			if (!isPoolGrenade)
+			{
+				Object.Destroy(base.gameObject);
+			}
+			fnc_stopGrenade();
+		}
+	}
+
+	private void fnc_explodeGrenade()
+	{
+		if (!isSetup || !currentlyActive)
+		{
+			return;
+		}
+		explosionTriggered = true;
+		if (explosionEffectPrefab != null)
+		{
+			Object.Instantiate(explosionEffectPrefab, base.transform.position, base.transform.rotation);
+		}
+		if (useAOEDamage)
+		{
+			Collider[] array = Physics.OverlapSphere(base.transform.position, explosionRadius);
+			foreach (Collider collider in array)
+			{
+				if (collider.GetComponent<TargetDamageBehaviour>() != null)
+				{
+					if (useAOEMultiplicator)
+					{
+						float num = Vector3.Distance(collider.transform.position, base.transform.position);
+						collider.GetComponent<TargetDamageBehaviour>().fnc_addDamage(maxExplosionDamage * ((explosionRadius - num) / explosionRadius));
+					}
+					else
+					{
+						collider.GetComponent<TargetDamageBehaviour>().fnc_addDamage(maxExplosionDamage);
+					}
+				}
+			}
+		}
+		if (!isPoolGrenade)
+		{
+			Object.Destroy(base.gameObject);
+		}
+		fnc_stopGrenade();
+	}
+}

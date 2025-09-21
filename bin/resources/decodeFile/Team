@@ -1,0 +1,48 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// Team
+using System;
+
+[Serializable]
+public class Team
+{
+	private string teamId;
+
+	private string teamKey;
+
+	public Team()
+	{
+		teamId = string.Empty;
+		teamKey = string.Empty;
+	}
+
+	public Team(string teamId, string teamKey)
+	{
+		this.teamId = teamId;
+		this.teamKey = teamKey;
+	}
+
+	public string GetTeamId()
+	{
+		return teamId;
+	}
+
+	public string GetTeamKey()
+	{
+		return teamKey;
+	}
+
+	public Team GetTeam()
+	{
+		return this;
+	}
+
+	public void SetTeamId(string teamId)
+	{
+		this.teamId = teamId;
+	}
+
+	public void SetTeamKey(string teamKey)
+	{
+		this.teamKey = teamKey;
+	}
+}

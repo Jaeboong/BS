@@ -1,0 +1,12 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// ACTION
+public enum ACTION
+{
+	STAY,
+	ACCEL,
+	PIVOT,
+	LOAD,
+	FIRE,
+	DECODE,
+	HOLD
+}

@@ -1,0 +1,291 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// MapController
+using System.Collections.Generic;
+using UnityEngine;
+
+public class MapController : MonoBehaviour
+{
+	private readonly string UNIQUE_NAME = "MAP";
+
+	public GameObject mainCamera;
+
+	public GameObject playGround;
+
+	public GameObject[,] tilesOnMap;
+
+	public GameObject[,] thingsOnMap;
+
+	public GameObject turretPrefab;
+
+	public GameObject facilityPrefab;
+
+	public GameObject grassPrefab;
+
+	public GameObject grassBluePrefab;
+
+	public GameObject grassRedPrefab;
+
+	public GameObject waterPrefab;
+
+	public GameObject sandPrefab;
+
+	public GameObject treesPrefab;
+
+	public GameObject rocksPrefab;
+
+	private StageSets stageSets;
+
+	private int[] mapSize;
+
+	private string[,] playMap;
+
+	private int[] toRemoveIndex = new int[2] { -1, -1 };
+
+	private Dictionary<string, GameObject> terrainPrefabs;
+
+	private Dictionary<string, GameObject> objectPrefabs;
+
+	private void Awake()
+	{
+		terrainPrefabs = new Dictionary<string, GameObject>
+		{
+			{ "S", sandPrefab },
+			{ "W", waterPrefab },
+			{ "G1", grassBluePrefab },
+			{ "G2", grassRedPrefab },
+			{ "G", grassPrefab }
+		};
+		objectPrefabs = new Dictionary<string, GameObject>
+		{
+			{ "T", treesPrefab },
+			{ "R", rocksPrefab },
+			{ "F", facilityPrefab },
+			{ "H", turretPrefab },
+			{ "XA", turretPrefab },
+			{ "XB", turretPrefab }
+		};
+	}
+
+	public int GetMapLength(int stageNo)
+	{
+		return (new int[7] { 4, 1, 5, 5, 5, 5, 4 })[stageNo];
+	}
+
+	public void CreateMap(int stageNo, int uniqueNo)
+	{
+		stageSets = new StageSets(stageNo);
+		mapSize = stageSets.GetSize(stageNo);
+		int num = mapSize[0];
+		int num2 = mapSize[1];
+		Debug.Log($"stageNo: {stageNo}, mapX {num}, mapZ {num2}");
+		tilesOnMap = new GameObject[num, num2];
+		thingsOnMap = new GameObject[num, num2];
+		switch (stageNo)
+		{
+		case 1:
+			playMap = stageSets.LoadStageMap(1, uniqueNo);
+			mainCamera.GetComponent<Transform>().position = new Vector3(-0.5f, 10f, 4f);
+			break;
+		case 2:
+			playMap = stageSets.LoadStageMap(2, uniqueNo);
+			mainCamera.GetComponent<Transform>().position = new Vector3(-0.5f, 10f, 4f);
+			break;
+		case 3:
+			playMap = stageSets.LoadStageMap(3, uniqueNo);
+			mainCamera.GetComponent<Transform>().position = new Vector3(-0.5f, 10f, 4f);
+			break;
+		case 4:
+			playMap = stageSets.LoadStageMap(4, uniqueNo);
+			mainCamera.GetComponent<Transform>().position = new Vector3(-0.5f, 10f, 4f);
+			break;
+		case 5:
+			playMap = stageSets.LoadStageMap(5, uniqueNo);
+			mainCamera.GetComponent<Transform>().position = new Vector3(-0.5f, 12f, 5.2f);
+			break;
+		case 6:
+			playMap = stageSets.LoadStageMap(6, uniqueNo);
+			mainCamera.GetComponent<Transform>().position = new Vector3(0f, 18.2f, 8.46f);
+			break;
+		case 0:
+			playMap = stageSets.LoadStageMap(0, uniqueNo);
+			mainCamera.GetComponent<Transform>().position = new Vector3(7.5f, 18.2f, 8.9f);
+			break;
+		default:
+			mainCamera.GetComponent<Transform>().position = new Vector3(-0.5f, 12f, 5.2f);
+			break;
+		}
+		PlaceTilesAndThigs();
+	}
+
+	private void PlaceTilesAndThigs()
+	{
+		int num = mapSize[0];
+		int num2 = mapSize[1];
+		for (int i = 0; i < num2; i++)
+		{
+			for (int j = 0; j < num; j++)
+			{
+				int num3 = num2 - i - 1;
+				int num4 = j;
+				string text = playMap[i, j];
+				GameObject gameObject = ((!terrainPrefabs.ContainsKey(text)) ? Object.Instantiate(grassPrefab, playGround.transform) : Object.Instantiate(terrainPrefabs[text], playGround.transform));
+				gameObject.transform.position = new Vector3(num4, 0f, num3);
+				tilesOnMap[i, j] = gameObject;
+				if (objectPrefabs.ContainsKey(text))
+				{
+					GameObject gameObject2 = Object.Instantiate(objectPrefabs[text], playGround.transform);
+					gameObject2.transform.position = new Vector3(num4, 0f, num3);
+					if (text == "XA")
+					{
+						gameObject2.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+					}
+					else if (text == "XB")
+					{
+						gameObject2.transform.rotation = Quaternion.Euler(0f, 270f, 0f);
+					}
+					thingsOnMap[i, j] = gameObject2;
+				}
+			}
+		}
+		Debug.Log("[" + UNIQUE_NAME + "] tiles and things were placed.");
+	}
+
+	public int[] GetMapSize()
+	{
+		return mapSize;
+	}
+
+	public string[,] GetMap()
+	{
+		return playMap;
+	}
+
+	public int[] GetFrontPosition(int currentX, int currentZ, int heading)
+	{
+		int num = 0;
+		int num2 = 0;
+		switch (heading)
+		{
+		case 0:
+			num2 = 1;
+			break;
+		case 90:
+			num = 1;
+			break;
+		case 180:
+			num2 = -1;
+			break;
+		case 270:
+			num = -1;
+			break;
+		}
+		return new int[2]
+		{
+			currentX + num,
+			currentZ + num2
+		};
+	}
+
+	public string GetFrontThing(int currentX, int currentZ, int heading)
+	{
+		int[] frontPosition = GetFrontPosition(currentX, currentZ, heading);
+		int[] array = ConvertPositionToArrayIndex(frontPosition);
+		int num = array[0];
+		int num2 = array[1];
+		if (num < 0 || num > mapSize[0] - 1)
+		{
+			return "N";
+		}
+		if (num2 < 0 || num2 > mapSize[1] - 1)
+		{
+			return "N";
+		}
+		return playMap[num, num2];
+	}
+
+	public string GetThing(int posX, int posZ)
+	{
+		int[] array = ConvertPositionToArrayIndex(new int[2] { posX, posZ });
+		int num = array[0];
+		int num2 = array[1];
+		if (num < 0 || num > mapSize[0] - 1)
+		{
+			return "N";
+		}
+		if (num2 < 0 || num2 > mapSize[1] - 1)
+		{
+			return "N";
+		}
+		return playMap[num, num2];
+	}
+
+	public string GetPosition(int posX, int posZ)
+	{
+		int num = mapSize[1] - posZ - 1;
+		Debug.Log($"[{UNIQUE_NAME}] target: {playMap[num, posX]} ({posX},{num})");
+		return playMap[num, posX];
+	}
+
+	public void SetPosition(int posX, int posZ, string t)
+	{
+		int[] array = ConvertPositionToArrayIndex(new int[2] { posX, posZ });
+		playMap[array[0], array[1]] = t;
+	}
+
+	public void SetMap(int posX, int posZ, string t)
+	{
+		int[] array = ConvertPositionToArrayIndex(new int[2] { posX, posZ });
+		playMap[array[0], array[1]] = t;
+	}
+
+	public void ChangeTile(int posX, int posZ, string t)
+	{
+		int[] array = ConvertPositionToArrayIndex(new int[2] { posX, posZ });
+		int num = array[0];
+		int num2 = array[1];
+		if (t.Equals("W"))
+		{
+			tilesOnMap[num, num2].SetActive(value: false);
+			GameObject gameObject = Object.Instantiate(waterPrefab);
+			gameObject.transform.position = new Vector3(posX, 0f, posZ);
+			tilesOnMap[num, num2] = gameObject;
+			playMap[num, num2] = "W";
+		}
+	}
+
+	public void RemoveThing(int posX, int posZ)
+	{
+		int[] array = ConvertPositionToArrayIndex(new int[2] { posX, posZ });
+		if (thingsOnMap[array[0], array[1]] != null)
+		{
+			toRemoveIndex[0] = array[0];
+			toRemoveIndex[1] = array[1];
+			playMap[array[0], array[1]] = "G";
+			Invoke("RemoveThing", 1f);
+		}
+	}
+
+	public void RemoveThing()
+	{
+		if (toRemoveIndex[0] > -1)
+		{
+			thingsOnMap[toRemoveIndex[0], toRemoveIndex[1]].SetActive(value: false);
+			toRemoveIndex[0] = -1;
+			toRemoveIndex[1] = -1;
+		}
+	}
+
+	public int[] ConvertPositionToArrayIndex(int[] position)
+	{
+		int num = position[0];
+		int num2 = mapSize[0] - position[1] - 1;
+		return new int[2] { num2, num };
+	}
+
+	public int[] ConvertArrayIndexToPosition(int[] arrayIndex)
+	{
+		int num = arrayIndex[0];
+		int num2 = mapSize[1] - arrayIndex[1] - 1;
+		return new int[2] { num2, num };
+	}
+}

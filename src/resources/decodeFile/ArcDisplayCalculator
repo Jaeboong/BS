@@ -1,0 +1,276 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// ArcDisplayCalculator
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Events;
+
+public class ArcDisplayCalculator : MonoBehaviour
+{
+	private float _flightTime;
+
+	private float _distanceToTarget;
+
+	private Vector3 _projectileHitPosition = Vector3.zero;
+
+	private GameObject _projectileHitGameObject;
+
+	private bool _projectileHasHit;
+
+	private bool _showDebugObjects = true;
+
+	[SerializeField]
+	[Tooltip("Set the gameObject for the display prefab")]
+	private GameObject displayPrefab;
+
+	[SerializeField]
+	[Tooltip("Set the hitChecker prefab here")]
+	private GameObject hitCheckerPrefab;
+
+	[SerializeField]
+	[Tooltip("Set the step size for the hit projection")]
+	private float hitProjectionStepSize = 0.1f;
+
+	[SerializeField]
+	[Tooltip("Set the estimated maxFlightTime multiplier here.")]
+	private float estiamtedMaxFlightTimeMultiplier = 2f;
+
+	public UnityEvent OnUpdatedHitPosition = new UnityEvent();
+
+	private ProjectileCalculator prCalc = new ProjectileCalculator();
+
+	private GameObject hitCheckerObject;
+
+	private HitChecker hitCheck;
+
+	private List<GameObject> debugDisplayObjects = new List<GameObject>();
+
+	private Transform transformGrenadeSpawn;
+
+	private Transform transformTurretTower;
+
+	private Transform transformBarrelHolder;
+
+	private float grenadeVelocity;
+
+	private float estimatedMaxFlightTime;
+
+	private int nrOfTestSteps;
+
+	private Vector2 parabulaPosition = Vector2.zero;
+
+	private Vector2 nextParabulaPosition = Vector2.zero;
+
+	private Vector3 nextHitPointPosition = Vector3.zero;
+
+	private Vector3 lastHitCheckPosition = Vector3.zero;
+
+	private Vector3 currentHitCheckPosition = Vector3.zero;
+
+	private float distanceBarrelToSpwan;
+
+	private float currentUpperLength;
+
+	private float currentSecondAngle;
+
+	private float currentDifference;
+
+	private float currentHeight;
+
+	private bool useDisplayObjects;
+
+	private bool isSetup;
+
+	private bool isUpdatingPosition;
+
+	public float flightTime
+	{
+		get
+		{
+			return _flightTime;
+		}
+		private set
+		{
+			_flightTime = value;
+		}
+	}
+
+	public float distanceToTarget
+	{
+		get
+		{
+			return _distanceToTarget;
+		}
+		private set
+		{
+			_distanceToTarget = value;
+		}
+	}
+
+	public Vector3 projectileHitPosition
+	{
+		get
+		{
+			return _projectileHitPosition;
+		}
+		private set
+		{
+			_projectileHitPosition = value;
+		}
+	}
+
+	public GameObject projectileHitGameObject
+	{
+		get
+		{
+			return _projectileHitGameObject;
+		}
+		private set
+		{
+			_projectileHitGameObject = value;
+		}
+	}
+
+	public bool projectileHasHit
+	{
+		get
+		{
+			return _projectileHasHit;
+		}
+		private set
+		{
+			_projectileHasHit = value;
+		}
+	}
+
+	public bool showDebugObjects
+	{
+		get
+		{
+			return _showDebugObjects;
+		}
+		private set
+		{
+			_showDebugObjects = value;
+		}
+	}
+
+	private void Awake()
+	{
+		if (displayPrefab == null)
+		{
+			Debug.Log("ArcDisplayCalculator: No displayPrefab for the arc was set.");
+		}
+		else if (hitCheckerPrefab == null)
+		{
+			Debug.LogError("ArcDisplayCalculator: No HitCheckerPrefab was set.");
+		}
+	}
+
+	public void fnc_setupArcDisplayCalculator(float inProjectileImpulse, float inProjectileMass, Transform inTransformGrenadeSpawn, Transform inTransformTurretTower, Transform inTransformBarrelHolder, bool inUseDisplayObjects)
+	{
+		if (isSetup)
+		{
+			return;
+		}
+		useDisplayObjects = inUseDisplayObjects;
+		grenadeVelocity = inProjectileImpulse / inProjectileMass;
+		transformGrenadeSpawn = inTransformGrenadeSpawn;
+		transformTurretTower = inTransformTurretTower;
+		transformBarrelHolder = inTransformBarrelHolder;
+		distanceBarrelToSpwan = Vector3.Distance(transformBarrelHolder.position, transformGrenadeSpawn.position);
+		estimatedMaxFlightTime = prCalc.fnc_estimateMaxFlightTime(45f, grenadeVelocity);
+		estimatedMaxFlightTime *= estiamtedMaxFlightTimeMultiplier;
+		nrOfTestSteps = Mathf.RoundToInt(estimatedMaxFlightTime / hitProjectionStepSize);
+		if (useDisplayObjects)
+		{
+			for (int i = 0; i < nrOfTestSteps; i++)
+			{
+				GameObject gameObject = UnityEngine.Object.Instantiate(displayPrefab, Vector3.zero, Quaternion.identity);
+				gameObject.name = "DebugDisplay_" + i;
+				gameObject.transform.parent = base.gameObject.transform;
+				debugDisplayObjects.Add(gameObject);
+				gameObject.SetActive(value: false);
+			}
+		}
+		hitCheckerObject = UnityEngine.Object.Instantiate(hitCheckerPrefab, base.gameObject.transform.position, Quaternion.identity);
+		hitCheckerObject.transform.parent = base.gameObject.transform;
+		hitCheck = hitCheckerObject.GetComponent<HitChecker>();
+		isSetup = true;
+	}
+
+	public void fnc_setDisplayStatus(bool inDisplayStatus)
+	{
+		if (!useDisplayObjects)
+		{
+			return;
+		}
+		showDebugObjects = inDisplayStatus;
+		if (!showDebugObjects)
+		{
+			for (int i = 0; i < debugDisplayObjects.Count; i++)
+			{
+				debugDisplayObjects[i].SetActive(value: false);
+			}
+		}
+	}
+
+	public void fnc_calculateFlightPathAndHit(float inStartAngle)
+	{
+		if (!isSetup || isUpdatingPosition)
+		{
+			return;
+		}
+		isUpdatingPosition = true;
+		projectileHasHit = false;
+		flightTime = 0f;
+		projectileHitPosition = Vector3.zero;
+		distanceToTarget = 0f;
+		if (useDisplayObjects && showDebugObjects)
+		{
+			for (int i = 0; i < debugDisplayObjects.Count; i++)
+			{
+				debugDisplayObjects[i].SetActive(value: false);
+			}
+		}
+		currentUpperLength = 2f * distanceBarrelToSpwan * Mathf.Sin(Mathf.Abs(transformBarrelHolder.localEulerAngles.x) * (MathF.PI / 180f) * 0.5f);
+		if (Mathf.Abs(transformBarrelHolder.localEulerAngles.x) > 90f)
+		{
+			currentSecondAngle = (180f - (360f - Mathf.Abs(transformBarrelHolder.localEulerAngles.x))) / 2f;
+		}
+		else
+		{
+			currentSecondAngle = (180f - transformBarrelHolder.localEulerAngles.x) / 2f;
+		}
+		currentDifference = currentUpperLength * Mathf.Cos(currentSecondAngle * (MathF.PI / 180f));
+		currentHeight = currentUpperLength / (2f * distanceBarrelToSpwan) * Mathf.Sqrt(4f * Mathf.Pow(distanceBarrelToSpwan, 2f) - Mathf.Pow(currentUpperLength, 2f));
+		for (int j = 0; j < nrOfTestSteps; j++)
+		{
+			parabulaPosition = prCalc.fnc_calculateXYAtTime(grenadeVelocity, inStartAngle, flightTime);
+			nextParabulaPosition = prCalc.fnc_calculateXYAtTime(grenadeVelocity, inStartAngle, flightTime + hitProjectionStepSize);
+			hitCheckerObject.transform.localPosition = new Vector3(0f, parabulaPosition.y + currentHeight, parabulaPosition.x - currentDifference);
+			nextHitPointPosition = hitCheckerObject.transform.position;
+			nextHitPointPosition.y += nextParabulaPosition.y - parabulaPosition.y;
+			nextHitPointPosition.z += nextParabulaPosition.x - parabulaPosition.x;
+			if (useDisplayObjects && showDebugObjects && j < debugDisplayObjects.Count)
+			{
+				if (j > 0)
+				{
+					debugDisplayObjects[j].SetActive(value: true);
+				}
+				debugDisplayObjects[j].transform.position = hitCheckerObject.transform.position;
+			}
+			if (hitCheck.fnc_checkForValidHitRay(hitCheckerObject.transform.position, nextHitPointPosition, transformTurretTower.localEulerAngles))
+			{
+				projectileHasHit = true;
+				projectileHitPosition = hitCheck.hitPosition;
+				projectileHitGameObject = hitCheck.hitGameObject;
+				break;
+			}
+			flightTime += hitProjectionStepSize;
+		}
+		distanceToTarget = Vector3.Distance(base.gameObject.transform.position, projectileHitPosition);
+		OnUpdatedHitPosition.Invoke();
+		isUpdatingPosition = false;
+	}
+}

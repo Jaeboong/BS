@@ -1,0 +1,162 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// Movable
+using UnityEngine;
+using UnityEngine.EventSystems;
+
+public class Movable : MonoBehaviour, IPointerDownHandler, IEventSystemHandler, IDragHandler, IPointerUpHandler
+{
+	private Vector2 _startingPoint;
+
+	private Vector2 _moveBegin;
+
+	private Vector2 _moveOffset;
+
+	void IPointerDownHandler.OnPointerDown(PointerEventData eventData)
+	{
+		_startingPoint = base.transform.position;
+		_moveBegin = eventData.position;
+	}
+
+	void IDragHandler.OnDrag(PointerEventData eventData)
+	{
+		_moveOffset = eventData.position - _moveBegin;
+		base.transform.position = _startingPoint + _moveOffset;
+	}
+
+	void IPointerUpHandler.OnPointerUp(PointerEventData eventData)
+	{
+		_ = (Vector2)base.transform.localPosition;
+	}
+}
+
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// MODE
+public enum MODE
+{
+	NONE,
+	STAGE,
+	EVALUTION,
+	BATTLE,
+	HELP
+}
+
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// MatchupExcelLoader
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using ExcelDataReader;
+
+public static class MatchupExcelLoader
+{
+	[DllImport("user32.dll", CharSet = CharSet.Auto)]
+	private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+	public static List<MatchGroup> LoadMatchups(string excelFilePath)
+	{
+		Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+		List<MatchGroup> list = new List<MatchGroup>();
+		Dictionary<int, MatchGroup> dictionary = new Dictionary<int, MatchGroup>();
+		try
+		{
+			using (FileStream fileStream = File.Open(excelFilePath, FileMode.Open, FileAccess.Read))
+			{
+				using IExcelDataReader self = ExcelReaderFactory.CreateReader(fileStream);
+				ExcelDataSetConfiguration configuration = new ExcelDataSetConfiguration
+				{
+					ConfigureDataTable = (IExcelDataReader _) => new ExcelDataTableConfiguration
+					{
+						UseHeaderRow = true
+					}
+				};
+				foreach (DataRow row in self.AsDataSet(configuration).Tables[0].Rows)
+				{
+					if (int.TryParse(row["MatchID"].ToString(), out var result))
+					{
+						string text = row["Team"].ToString().Trim().ToUpper();
+						string item = row["Code"].ToString().Replace("\\", "/");
+						if (!dictionary.ContainsKey(result))
+						{
+							dictionary[result] = new MatchGroup(result);
+						}
+						if (text == "A")
+						{
+							dictionary[result].TeamAPaths.Add(item);
+						}
+						else if (text == "B")
+						{
+							dictionary[result].TeamBPaths.Add(item);
+						}
+					}
+				}
+			}
+			list.AddRange(dictionary.Values);
+			return list;
+		}
+		catch (FileNotFoundException)
+		{
+			ShowPopup("엑셀 파일이 존재하지 않습니다.\n파일 경로를 확인해주세요.");
+			return null;
+		}
+		catch (IOException)
+		{
+			ShowPopup("엑셀 파일이 이미 열려있거나 사용 중입니다.\n닫은 후 다시 시도해주세요.");
+			return null;
+		}
+		catch (Exception ex3)
+		{
+			ShowPopup("엑셀 파일을 여는 중 알 수 없는 오류가 발생했습니다.\n" + ex3.Message);
+			return null;
+		}
+	}
+
+	private static void ShowPopup(string message)
+	{
+		MessageBox(Process.GetCurrentProcess().MainWindowHandle, message, "오류", 0u);
+	}
+}
+
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// MatchGroup
+using System;
+using System.Collections.Generic;
+
+[Serializable]
+public class MatchGroup
+{
+	public int MatchID;
+
+	public List<string> TeamAPaths = new List<string>();
+
+	public List<string> TeamBPaths = new List<string>();
+
+	public MatchGroup(int matchID)
+	{
+		MatchID = matchID;
+	}
+}
+
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// MatchEntry
+using System;
+
+[Serializable]
+public class MatchEntry
+{
+	public int MatchID;
+
+	public string Team;
+
+	public string CodePath;
+
+	public MatchEntry(int matchID, string team, string path)
+	{
+		MatchID = matchID;
+		Team = team;
+		CodePath = path;
+	}
+}

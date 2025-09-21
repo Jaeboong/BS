@@ -1,0 +1,57 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// InitController
+using System.Diagnostics;
+using UnityEngine;
+
+public class InitController : MonoBehaviour
+{
+	public GameObject consoleArea;
+
+	private void OnEnable()
+	{
+		UnityEngine.Debug.Log(CheckFirewall());
+	}
+
+	private bool CheckFirewall()
+	{
+		string command = "netsh advfirewall firewall show rule name=all dir=in type=dynamic | findstr 8747";
+		string text = RunProcess(command);
+		UnityEngine.Debug.Log(text);
+		string[] array = text.Split("\n");
+		foreach (string text2 in array)
+		{
+			if (text2.Contains("LocalPort") && text2.Contains("8747"))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private bool AddFirewallRule()
+	{
+		string command = "netsh advfirewall firewall add rule name=\"Battle_SSAFY\" protocol=TCP dir=in localport=8747 action=allow";
+		string[] array = RunProcess(command).Split("\n");
+		for (int i = 0; i < array.Length; i++)
+		{
+			UnityEngine.Debug.Log(array[i]);
+		}
+		return false;
+	}
+
+	private string RunProcess(string command)
+	{
+		using Process process = new Process();
+		process.StartInfo.UseShellExecute = false;
+		process.StartInfo.RedirectStandardInput = true;
+		process.StartInfo.RedirectStandardOutput = true;
+		process.StartInfo.FileName = "cmd";
+		process.Start();
+		process.StandardInput.WriteLine(command);
+		process.StandardInput.WriteLine("exit");
+		process.StandardInput.Flush();
+		string result = process.StandardOutput.ReadToEnd();
+		process.WaitForExit();
+		return result;
+	}
+}

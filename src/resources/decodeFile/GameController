@@ -1,0 +1,968 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// GameController
+using System;
+using System.Collections.Generic;
+using System.Text;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class GameController : MonoBehaviour
+{
+	private readonly string UNIQUE_NAME = "GAME CONTROL";
+
+	public GameObject playStageController;
+
+	public GameObject mapController;
+
+	public GameObject mainScreen;
+
+	public GameObject notification;
+
+	public GameObject debuggingPanel;
+
+	public GameObject bottomFrame;
+
+	public GameObject trialBox;
+
+	public GameObject mainCamera;
+
+	public GameObject playGround;
+
+	public List<GameObject> players = new List<GameObject>();
+
+	public List<GameObject> playerPanels = new List<GameObject>();
+
+	public List<GameObject> temporalObjects = new List<GameObject>();
+
+	public int currentPlayer;
+
+	public GameObject tankPrefab;
+
+	public GameObject demoTankPrefab;
+
+	public GameObject missilePrefab;
+
+	public GameObject blastPrefab;
+
+	public GameObject playerPanelPrefab;
+
+	public Material[] tankLowerMaterials;
+
+	public Material matBlue;
+
+	public Material matGreen;
+
+	public Material matSkyblue;
+
+	public Material matRed;
+
+	public Material matYellow;
+
+	public Material matOrange;
+
+	private bool isMoving;
+
+	private Vector3 currentPosition;
+
+	private Vector3 targetPosition;
+
+	private Quaternion currentRotation;
+
+	private Quaternion targetRotation;
+
+	private string currentCommand = string.Empty;
+
+	private string handlingCommand = string.Empty;
+
+	private string handlingArgument = string.Empty;
+
+	private int rotating;
+
+	private int rotatingTarget;
+
+	private GameObject networkController;
+
+	private int effectDelay = 60;
+
+	public int turretA = 30;
+
+	public int turretB = 30;
+
+	private int scenarioDone;
+
+	private int thistime = -1;
+
+	private int stageNumberofThis;
+
+	private bool endForced;
+
+	public bool isTurnOvered;
+
+	private StageSets stageSets;
+
+	private void Awake()
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Awaken");
+		GameManager manager = GameManager.manager;
+		manager.SetState(STATE.NONE);
+		manager.SetProceed(PROCEED.STOPPED);
+		networkController = GameObject.Find("Network Controller");
+	}
+
+	private void OnEnable()
+	{
+		isTurnOvered = false;
+		Debug.Log("[" + UNIQUE_NAME + "] Enabled");
+		bottomFrame.SetActive(value: false);
+		int currentStage = GameManager.manager.GetCurrentStage();
+		stageNumberofThis = GameManager.manager.GetCurrentStage();
+		int mapLength = mapController.GetComponent<MapController>().GetMapLength(currentStage);
+		int latestMapIndex = GameManager.manager.GetLatestMapIndex();
+		thistime = -1;
+		if (mapLength <= 1)
+		{
+			thistime = 0;
+		}
+		else
+		{
+			while (latestMapIndex == thistime || thistime < 0)
+			{
+				thistime = UnityEngine.Random.Range(0, mapLength);
+			}
+		}
+		Debug.Log($"[{UNIQUE_NAME}] Trying to create Map index {thistime}.");
+		GameManager.manager.SetLatestMapIndex(thistime);
+		mapController.GetComponent<MapController>().CreateMap(currentStage, thistime);
+	}
+
+	private void Start()
+	{
+		GameManager manager = GameManager.manager;
+		trialBox.SetActive(value: false);
+		if (manager.GetMode() == MODE.STAGE)
+		{
+			TemporalPlacing();
+			manager.SetState(STATE.WAITING);
+		}
+		else if (manager.GetMode() == MODE.EVALUTION)
+		{
+			trialBox.GetComponentInChildren<Text>().text = $"{manager.GetTrial() + 1}번째 시도";
+			trialBox.SetActive(value: true);
+			if (manager.GetCurrentStage() == 1 && manager.GetTrial() == 0)
+			{
+				TemporalPlacing();
+				manager.SetState(STATE.WAITING);
+			}
+			else
+			{
+				NewPlayerConnected(0, 0);
+			}
+		}
+	}
+
+	private void FixedUpdate()
+	{
+		GameManager manager = GameManager.manager;
+		try
+		{
+			UpdatePlayerPanels();
+		}
+		catch (Exception ex)
+		{
+			Debug.Log(ex.ToString());
+		}
+		if (manager.GetState() == STATE.WAITING)
+		{
+			int connectingClient = manager.GetConnectingClient();
+			if (connectingClient >= 0)
+			{
+				manager.SetConnectingClient(-1);
+				int count = players.Count;
+				NewPlayerConnected(count, connectingClient);
+			}
+		}
+		if (manager.IsTurnGoing())
+		{
+			manager.SetTurnGoing(pass: false);
+		}
+		if (manager.GetState() != STATE.WAITING && manager.GetProceed() == PROCEED.STOPPED && manager.IsTurnPassed())
+		{
+			if (ReachedEnd())
+			{
+				manager.SetState(STATE.ENDED);
+				manager.SetTurnPass(pass: false);
+				if (manager.GetMode() == MODE.STAGE)
+				{
+					players[currentPlayer].GetComponent<Tank>().SendEndSignal();
+				}
+			}
+			else if (effectDelay > 0)
+			{
+				effectDelay--;
+			}
+			else
+			{
+				manager.SetTurnPass(pass: false);
+				effectDelay = 60;
+				int num = IsScenario();
+				if (num >= 0)
+				{
+					TakeScenarioAction(num);
+				}
+				else
+				{
+					players[currentPlayer].GetComponent<Tank>().SendMapToClient();
+				}
+			}
+		}
+		if (manager.GetState() == STATE.ENDED)
+		{
+			if (effectDelay > 0)
+			{
+				effectDelay--;
+			}
+			else
+			{
+				manager.SetState(STATE.NONE);
+				playStageController.GetComponent<PlayStageController>().EndStage();
+				effectDelay = 60;
+			}
+		}
+		string text = CreateDebugText();
+		debuggingPanel.GetComponentInChildren<Text>().text = text;
+	}
+
+	public void ForceEnd()
+	{
+		endForced = true;
+		GameManager manager = GameManager.manager;
+		manager.SetCurrentStars(0);
+		if (manager.GetMode() == MODE.EVALUTION)
+		{
+			int currentStage = manager.GetCurrentStage();
+			manager.SetStageStars(currentStage, 0);
+			manager.SetStageScore(currentStage, 0f);
+		}
+		manager.SetState(STATE.ENDED);
+		GameManager.manager.SetProceed(PROCEED.STOPPED);
+	}
+
+	private int IsScenario()
+	{
+		GameManager manager = GameManager.manager;
+		int turn = players[0].GetComponent<Tank>().turn;
+		if (scenarioDone < turn && manager.GetCurrentStage() == 6)
+		{
+			Debug.Log($"currentTurn: {turn}");
+			return turn;
+		}
+		return -1;
+	}
+
+	private void TakeScenarioAction(int scenarioNo)
+	{
+		scenarioDone++;
+		string[] array = new string[4] { "U", "R", "D", "L" };
+		if (GameManager.manager.GetCurrentStage() != 6)
+		{
+			return;
+		}
+		MapController component = mapController.GetComponent<MapController>();
+		if (thistime == 0)
+		{
+			switch (scenarioNo)
+			{
+			case 1:
+				component.ChangeTile(2, 3, "W");
+				component.ChangeTile(3, 3, "W");
+				component.ChangeTile(8, 13, "W");
+				break;
+			case 2:
+				component.ChangeTile(2, 4, "W");
+				component.ChangeTile(3, 4, "W");
+				component.ChangeTile(9, 13, "W");
+				component.ChangeTile(8, 12, "W");
+				break;
+			case 3:
+				component.ChangeTile(2, 5, "W");
+				component.ChangeTile(3, 5, "W");
+				component.ChangeTile(10, 13, "W");
+				component.ChangeTile(9, 12, "W");
+				component.ChangeTile(8, 11, "W");
+				break;
+			case 4:
+				component.ChangeTile(2, 6, "W");
+				component.ChangeTile(3, 6, "W");
+				component.ChangeTile(11, 13, "W");
+				component.ChangeTile(10, 12, "W");
+				component.ChangeTile(9, 11, "W");
+				component.ChangeTile(8, 10, "W");
+				break;
+			case 5:
+				component.ChangeTile(2, 7, "W");
+				component.ChangeTile(3, 7, "W");
+				component.ChangeTile(9, 10, "W");
+				component.ChangeTile(12, 13, "W");
+				component.ChangeTile(11, 12, "W");
+				component.ChangeTile(10, 11, "W");
+				component.ChangeTile(9, 10, "W");
+				break;
+			case 6:
+				component.ChangeTile(2, 8, "W");
+				component.ChangeTile(3, 8, "W");
+				component.ChangeTile(12, 12, "W");
+				component.ChangeTile(11, 11, "W");
+				component.ChangeTile(10, 10, "W");
+				break;
+			case 7:
+				component.ChangeTile(2, 9, "W");
+				component.ChangeTile(3, 9, "W");
+				component.ChangeTile(12, 11, "W");
+				break;
+			case 8:
+				component.ChangeTile(2, 10, "W");
+				component.ChangeTile(3, 10, "W");
+				break;
+			case 9:
+				component.ChangeTile(2, 11, "W");
+				break;
+			case 10:
+				component.ChangeTile(2, 12, "W");
+				break;
+			}
+		}
+		else if (thistime == 1)
+		{
+			switch (scenarioNo)
+			{
+			case 1:
+				component.ChangeTile(5, 2, "W");
+				component.ChangeTile(6, 2, "W");
+				component.ChangeTile(7, 2, "W");
+				component.ChangeTile(8, 2, "W");
+				break;
+			case 2:
+				component.ChangeTile(5, 3, "W");
+				component.ChangeTile(6, 3, "W");
+				component.ChangeTile(7, 3, "W");
+				component.ChangeTile(8, 3, "W");
+				break;
+			case 3:
+				component.ChangeTile(5, 4, "W");
+				component.ChangeTile(6, 4, "W");
+				component.ChangeTile(7, 4, "W");
+				component.ChangeTile(8, 4, "W");
+				break;
+			case 4:
+				component.ChangeTile(8, 6, "W");
+				component.ChangeTile(9, 6, "W");
+				component.ChangeTile(10, 6, "W");
+				break;
+			case 5:
+				component.ChangeTile(8, 7, "W");
+				component.ChangeTile(9, 7, "W");
+				component.ChangeTile(10, 7, "W");
+				break;
+			case 6:
+				component.ChangeTile(8, 8, "W");
+				component.ChangeTile(9, 8, "W");
+				component.ChangeTile(10, 8, "W");
+				break;
+			}
+		}
+		else if (thistime == 2)
+		{
+			switch (scenarioNo)
+			{
+			case 1:
+				component.ChangeTile(2, 10, "W");
+				component.ChangeTile(2, 11, "W");
+				component.ChangeTile(2, 12, "W");
+				break;
+			case 2:
+				component.ChangeTile(3, 10, "W");
+				component.ChangeTile(3, 11, "W");
+				component.ChangeTile(3, 12, "W");
+				break;
+			case 3:
+				component.ChangeTile(4, 10, "W");
+				break;
+			case 4:
+				component.ChangeTile(5, 10, "W");
+				component.ChangeTile(5, 9, "W");
+				break;
+			case 5:
+				component.ChangeTile(6, 10, "W");
+				component.ChangeTile(6, 9, "W");
+				break;
+			case 6:
+				component.ChangeTile(7, 10, "W");
+				component.ChangeTile(7, 9, "W");
+				break;
+			case 7:
+				component.ChangeTile(8, 10, "W");
+				component.ChangeTile(8, 9, "W");
+				break;
+			case 8:
+				component.ChangeTile(8, 8, "W");
+				break;
+			case 9:
+				component.ChangeTile(8, 7, "W");
+				break;
+			case 10:
+				component.ChangeTile(8, 6, "W");
+				break;
+			case 11:
+				component.ChangeTile(8, 5, "W");
+				break;
+			}
+		}
+		else if (thistime == 3)
+		{
+			switch (scenarioNo)
+			{
+			case 1:
+				component.ChangeTile(14, 5, "W");
+				break;
+			case 2:
+				component.ChangeTile(13, 5, "W");
+				break;
+			}
+		}
+		System.Random random = new System.Random();
+		_ = new int[3] { 1, 3, 5 };
+		int num = scenarioNo % 3 * 2 + 1;
+		if (players[num] != null)
+		{
+			int num2 = random.Next(0, 4);
+			Debug.Log($"[GameController] SCENARIO: players[{num}]'s moving to <{array[num2]} A>");
+			players[num].GetComponent<Tank>().Pivot(array[num2], "A", "");
+		}
+		else
+		{
+			GameManager.manager.SetTurnGoing(pass: false);
+			GameManager.manager.SetTurnPass(pass: true);
+		}
+	}
+
+	private void NewPlayerConnected(int playerNo, int clientNo)
+	{
+		foreach (GameObject temporalObject in temporalObjects)
+		{
+			UnityEngine.Object.Destroy(temporalObject);
+		}
+		bottomFrame.GetComponentInChildren<Text>().text = string.Empty;
+		AddPlayer(playerNo, clientNo);
+		AddPlayerPanel(playerNo);
+		GameManager manager = GameManager.manager;
+		if (manager.GetMode() == MODE.STAGE || manager.GetMode() == MODE.EVALUTION)
+		{
+			manager.SetState(STATE.PLAYING);
+			notification.SetActive(value: false);
+			players[currentPlayer].GetComponent<Tank>().SendMapToClient();
+		}
+	}
+
+	public void HitPlayer(string targetTank, int damage)
+	{
+		int num = 99;
+		if (targetTank.Equals("A1"))
+		{
+			num = 0;
+		}
+		else if (targetTank.Equals("B1"))
+		{
+			num = 1;
+		}
+		else if (targetTank.Equals("A2"))
+		{
+			num = 2;
+		}
+		else if (targetTank.Equals("B2"))
+		{
+			num = 3;
+		}
+		else if (targetTank.Equals("A3"))
+		{
+			num = 4;
+		}
+		else if (targetTank.Equals("B3"))
+		{
+			num = 5;
+		}
+		if (players.Count > num)
+		{
+			players[num].GetComponent<Tank>().health -= damage;
+			Debug.Log($"player[{num}] hit!!! current health: {players[num].GetComponent<Tank>().health}");
+			if (players[num].GetComponent<Tank>().health <= 0)
+			{
+				int[] position = players[num].GetComponent<Tank>().GetPosition();
+				mapController.GetComponent<MapController>().SetMap(position[0], position[1], "G");
+				players[num].SetActive(value: false);
+				players[num] = null;
+				Debug.Log($"player[{num}] got NULL");
+			}
+			if (num == 0)
+			{
+				ForceEnd();
+			}
+		}
+	}
+
+	private void TemporalPlacing()
+	{
+		GameManager manager = GameManager.manager;
+		mapController.GetComponent<MapController>();
+		int materialNo = 0;
+		GameObject gameObject = UnityEngine.Object.Instantiate(demoTankPrefab, networkController.transform);
+		ChangeTankMaterial(gameObject, materialNo);
+		mapController.GetComponent<MapController>().GetMapSize();
+		int num = 0;
+		int num2 = 1;
+		gameObject.transform.position = new Vector3(num, 0f, num2);
+		temporalObjects.Add(gameObject);
+		if (GameManager.manager.GetCurrentStage() == 6)
+		{
+			int num3 = 15;
+			int num4 = 11;
+			GameObject gameObject2 = UnityEngine.Object.Instantiate(demoTankPrefab, networkController.transform);
+			ChangeTankMaterial(gameObject2, 1);
+			gameObject2.transform.position = new Vector3(num3, 0f, num4);
+			gameObject2.transform.rotation = Quaternion.Euler(0f, 270f, 0f);
+			temporalObjects.Add(gameObject2);
+			num3 = 15;
+			num4 = 9;
+			gameObject2 = UnityEngine.Object.Instantiate(demoTankPrefab, networkController.transform);
+			ChangeTankMaterial(gameObject2, 3);
+			gameObject2.transform.position = new Vector3(num3, 0f, num4);
+			gameObject2.transform.rotation = Quaternion.Euler(0f, 270f, 0f);
+			temporalObjects.Add(gameObject2);
+			num3 = 15;
+			num4 = 7;
+			gameObject2 = UnityEngine.Object.Instantiate(demoTankPrefab, networkController.transform);
+			ChangeTankMaterial(gameObject2, 5);
+			gameObject2.transform.position = new Vector3(num3, 0f, num4);
+			gameObject2.transform.rotation = Quaternion.Euler(0f, 270f, 0f);
+			temporalObjects.Add(gameObject2);
+		}
+		if (manager.GetMode() == MODE.STAGE && manager.GetTrial() == 0)
+		{
+			GetTemporalData();
+		}
+	}
+
+	public void GetTemporalData()
+	{
+		stageSets = new StageSets(stageNumberofThis);
+		string[,] array = stageSets.LoadStageMap(stageNumberofThis, thistime);
+		StringBuilder stringBuilder = new StringBuilder();
+		int length = array.GetLength(0);
+		int length2 = array.GetLength(1);
+		if (stageNumberofThis == 6)
+		{
+			stringBuilder.AppendLine($"{length2} {length} 1 4 0");
+		}
+		else
+		{
+			stringBuilder.AppendLine($"{length2} {length} 1 1 0");
+		}
+		for (int i = 0; i < length; i++)
+		{
+			for (int j = 0; j < length2; j++)
+			{
+				string text = array[i, j];
+				if (text.Equals("XB"))
+				{
+					text = "X";
+				}
+				stringBuilder.Append(text);
+				if (j < length2 - 1)
+				{
+					stringBuilder.Append(" ");
+				}
+			}
+			stringBuilder.AppendLine();
+		}
+		if (stageNumberofThis == 5)
+		{
+			stringBuilder.AppendLine("M 100 R 1 10");
+		}
+		else
+		{
+			stringBuilder.AppendLine("M 100 R 1 0");
+		}
+		if (stageNumberofThis == 6)
+		{
+			stringBuilder.AppendLine("E1 10");
+			stringBuilder.AppendLine("E2 10");
+			stringBuilder.AppendLine("E3 10");
+		}
+		stringBuilder.AppendLine("X 10");
+		bottomFrame.GetComponentInChildren<Text>().text = stringBuilder.ToString();
+		bottomFrame.SetActive(value: true);
+	}
+
+	private void AddPlayer(int playerNo, int clientNo)
+	{
+		GameManager manager = GameManager.manager;
+		MapController component = mapController.GetComponent<MapController>();
+		Debug.Log($"[{UNIQUE_NAME}] {manager.GetMode()} / {manager.GetCurrentStage()} / {manager.GetTrial()}");
+		if (manager.GetMode() == MODE.EVALUTION && (manager.GetCurrentStage() > 1 || (manager.GetCurrentStage() == 1 && manager.GetTrial() == 1)))
+		{
+			GameObject gameObject = GameObject.Find("player0");
+			gameObject.SetActive(value: false);
+			gameObject.SetActive(value: true);
+			int num = 0;
+			int num2 = 1;
+			string t = "A1";
+			gameObject.transform.position = new Vector3(num, 0f, num2);
+			if (manager.GetCurrentStage() == 5)
+			{
+				gameObject.GetComponent<Tank>().InitPlayerStat(100, 90, 1, 10);
+			}
+			else
+			{
+				gameObject.GetComponent<Tank>().InitPlayerStat(100, 90, 1, 0);
+			}
+			gameObject.GetComponent<Tank>().InitPlayerPosition(new int[2] { num, num2 });
+			component.SetMap(num, num2, t);
+			players.Add(gameObject);
+		}
+		else
+		{
+			DestroyPlayers();
+			GameObject gameObject2 = UnityEngine.Object.Instantiate(tankPrefab, networkController.transform);
+			ChangeTankMaterial(gameObject2, playerNo);
+			int[] mapSize = mapController.GetComponent<MapController>().GetMapSize();
+			int num3 = 0;
+			int num4 = 1;
+			string text = "A1";
+			switch (playerNo)
+			{
+			case 0:
+				num3 = 0;
+				num4 = 1;
+				text = "A1";
+				break;
+			case 2:
+				num3 = 0;
+				num4 = 3;
+				text = "A2";
+				break;
+			case 4:
+				num3 = 0;
+				num4 = 5;
+				text = "A3";
+				break;
+			case 1:
+				num3 = mapSize[0] - 1;
+				num4 = mapSize[1] - 2;
+				text = "B1";
+				break;
+			case 3:
+				num3 = mapSize[0] - 1;
+				num4 = mapSize[1] - 6;
+				text = "B2";
+				break;
+			case 5:
+				num3 = mapSize[0] - 1;
+				num4 = mapSize[1] - 6;
+				text = "B3";
+				break;
+			}
+			gameObject2.transform.name = "player0";
+			gameObject2.transform.position = new Vector3(num3, 0f, num4);
+			gameObject2.GetComponent<Tank>().InitPlayer(playerNo, text.Substring(0, 1), text);
+			if (manager.GetCurrentStage() == 5)
+			{
+				gameObject2.GetComponent<Tank>().InitPlayerStat(100, 90, 1, 10);
+			}
+			else
+			{
+				gameObject2.GetComponent<Tank>().InitPlayerStat(100, 90, 1, 0);
+			}
+			gameObject2.GetComponent<Tank>().InitPlayerPosition(new int[2] { num3, num4 });
+			component.SetMap(num3, num4, text);
+			players.Add(gameObject2);
+			Tank component2 = gameObject2.GetComponent<Tank>();
+			component2.SetPlayerNo(playerNo);
+			component2.AssignSocket(clientNo);
+			component2.ReceiveFromClient();
+		}
+		if (GameManager.manager.GetCurrentStage() == 6)
+		{
+			int num5 = 15;
+			int num6 = 11;
+			string text2 = "B1";
+			GameObject gameObject3 = UnityEngine.Object.Instantiate(tankPrefab, networkController.transform);
+			ChangeTankMaterial(gameObject3, 1);
+			gameObject3.transform.position = new Vector3(num5, 0f, num6);
+			gameObject3.GetComponent<Tank>().InitPlayer(1, text2.Substring(0, 1), text2);
+			gameObject3.GetComponent<Tank>().InitPlayerStat(10, 270, 0, 0);
+			gameObject3.GetComponent<Tank>().InitPlayerPosition(new int[2] { num5, num6 });
+			component.SetMap(num5, num6, text2);
+			players.Add(gameObject3);
+			players.Add(null);
+			num5 = 15;
+			num6 = 9;
+			text2 = "B2";
+			gameObject3 = UnityEngine.Object.Instantiate(tankPrefab, networkController.transform);
+			ChangeTankMaterial(gameObject3, 3);
+			gameObject3.transform.position = new Vector3(num5, 0f, num6);
+			gameObject3.GetComponent<Tank>().InitPlayer(1, text2.Substring(0, 1), text2);
+			gameObject3.GetComponent<Tank>().InitPlayerStat(10, 270, 0, 0);
+			gameObject3.GetComponent<Tank>().InitPlayerPosition(new int[2] { num5, num6 });
+			component.SetMap(num5, num6, text2);
+			players.Add(gameObject3);
+			players.Add(null);
+			num5 = 15;
+			num6 = 7;
+			text2 = "B3";
+			gameObject3 = UnityEngine.Object.Instantiate(tankPrefab, networkController.transform);
+			ChangeTankMaterial(gameObject3, 5);
+			gameObject3.transform.position = new Vector3(num5, 0f, num6);
+			gameObject3.GetComponent<Tank>().InitPlayer(1, text2.Substring(0, 1), text2);
+			gameObject3.GetComponent<Tank>().InitPlayerStat(10, 270, 0, 0);
+			gameObject3.GetComponent<Tank>().InitPlayerPosition(new int[2] { num5, num6 });
+			component.SetMap(num5, num6, text2);
+			players.Add(gameObject3);
+		}
+	}
+
+	private void AddPlayerPanel(int playerNo)
+	{
+		Debug.Log($"[{UNIQUE_NAME}] Player Added {playerNo}");
+		GameObject gameObject = UnityEngine.Object.Instantiate(playerPanelPrefab, mainScreen.transform);
+		gameObject.transform.SetSiblingIndex(1);
+		gameObject.transform.localPosition = new Vector2(-510f, 180f);
+		playerPanels.Add(gameObject);
+		UpdatePlayerPanel(playerNo);
+		gameObject.SetActive(value: true);
+	}
+
+	public void UpdatePlayerPanels()
+	{
+		for (int i = 0; i < playerPanels.Count; i++)
+		{
+			try
+			{
+				UpdatePlayerPanel(i);
+			}
+			catch (Exception ex)
+			{
+				Debug.Log(ex.ToString());
+			}
+		}
+	}
+
+	public void UpdatePlayerPanel(int playerNo)
+	{
+		GameObject gameObject = playerPanels[playerNo];
+		int childCount = gameObject.transform.childCount;
+		Tank component = players[playerNo].GetComponent<Tank>();
+		for (int i = 0; i < childCount; i++)
+		{
+			Transform child = gameObject.transform.GetChild(i);
+			if (child.name == "Player Name")
+			{
+				child.GetComponentInChildren<Text>().text = component.nickname;
+			}
+			else if (child.name == "Tank Health")
+			{
+				string text = string.Empty;
+				for (int j = 0; j < component.health; j += 10)
+				{
+					text += "■";
+				}
+				child.GetComponentInChildren<Text>().text = text;
+			}
+			else if (child.name == "Missiles")
+			{
+				child.GetComponentInChildren<Text>().text = "× " + component.missiles;
+			}
+			else if (child.name == "Smart Missiles")
+			{
+				child.GetComponentInChildren<Text>().text = "× " + component.smartMissiles;
+			}
+			else if (child.name == "Turn Count")
+			{
+				child.GetComponentInChildren<Text>().text = component.turn.ToString();
+			}
+			else
+			{
+				if (!(child.name == "Command Box"))
+				{
+					continue;
+				}
+				if (isTurnOvered)
+				{
+					child.GetComponentInChildren<Text>().text = "";
+					continue;
+				}
+				string command = component.GetCommand();
+				if (command.Length > 0 && command.Substring(0, 1).Equals("G"))
+				{
+					child.GetComponentInChildren<Text>().text = "G ***";
+				}
+				else if (command.Length > 0 && command.Substring(0, 1).Equals("C"))
+				{
+					child.GetComponentInChildren<Text>().text = "Connected";
+				}
+				else if (command.Length > 4 && command.Substring(0, 4).Equals("INIT"))
+				{
+					child.GetComponentInChildren<Text>().text = "Connected";
+				}
+				else if (command.Length > 2 && command.Substring(2, 1).Equals("G"))
+				{
+					child.GetComponentInChildren<Text>().text = command.Substring(0, 1) + " G ***";
+				}
+				else
+				{
+					child.GetComponentInChildren<Text>().text = component.GetCommand();
+				}
+			}
+		}
+	}
+
+	private void ChangeTankMaterial(GameObject tankObject, int materialNo)
+	{
+		for (int i = 0; i < tankObject.transform.childCount; i++)
+		{
+			Transform child = tankObject.transform.GetChild(i);
+			if (child.name.Equals("tank_lower"))
+			{
+				child.GetComponent<MeshRenderer>().material = tankLowerMaterials[materialNo];
+				break;
+			}
+		}
+	}
+
+	private string CreateDebugText()
+	{
+		GameManager manager = GameManager.manager;
+		string text = manager.GetMode().ToString();
+		string text2 = manager.GetState().ToString();
+		string text3 = manager.GetProceed().ToString();
+		string text4 = manager.GetNetwork().ToString();
+		string text5 = manager.GetConnectingClient().ToString();
+		string text6 = "==== GameManager ====\n";
+		text6 = text6 + "MODE".PadRight(10) + "STAGE".PadRight(10) + "PROCEED".PadRight(10) + "NETWORK".PadRight(10) + "CLIENT".PadRight(10) + "\n";
+		text6 = text6 + text.PadRight(10) + text2.PadRight(10) + text3.PadRight(10) + text4.PadRight(10) + text5.PadRight(10) + "\n";
+		text6 = text6 + "TURNGOING".PadRight(10) + "TURNPASS".PadRight(10) + "CURPLAYER".PadRight(10) + "\n";
+		return text6 + manager.IsTurnGoing().ToString().PadRight(10) + manager.IsTurnPassed().ToString().PadRight(10) + currentPlayer.ToString().PadRight(10);
+	}
+
+	private bool ReachedEnd()
+	{
+		bool flag = false;
+		bool flag2 = false;
+		if (turretA <= 0 || turretB <= 0)
+		{
+			flag = true;
+			if (turretA <= 0)
+			{
+				flag2 = true;
+			}
+		}
+		GameManager manager = GameManager.manager;
+		int currentStage = manager.GetCurrentStage();
+		Tank component = players[0].GetComponent<Tank>();
+		if (!flag && component.turn >= 99)
+		{
+			isTurnOvered = true;
+		}
+		if (isTurnOvered)
+		{
+			flag = true;
+			component.turn++;
+			Debug.Log($"Player's turn added as overed -> {component.turn}");
+		}
+		if (!flag)
+		{
+			return false;
+		}
+		if (manager.GetMode() == MODE.STAGE || manager.GetMode() == MODE.EVALUTION)
+		{
+			int num = 0;
+			int turn = component.turn;
+			int trial = manager.GetTrial();
+			if (currentStage == 1 && trial == 0)
+			{
+				manager.SetTotalScore(0f);
+				manager.ClearTotalStars();
+				manager.ClearStageScores();
+			}
+			if (flag2)
+			{
+				manager.SetStageStars(currentStage, 0);
+				manager.SetStageScore(currentStage, 0f);
+			}
+			else
+			{
+				num = CalculateStars(currentStage, turn);
+				manager.SetCurrentStars(num);
+				if (manager.GetMode() == MODE.EVALUTION)
+				{
+					HandleEvaluation(manager, currentStage, trial, num, turn);
+				}
+			}
+		}
+		return true;
+	}
+
+	private int CalculateStars(int stage, int turns)
+	{
+		return stage switch
+		{
+			1 => (turns <= 99) ? 3 : 0, 
+			2 => (turns <= 21) ? 3 : ((turns <= 22) ? 2 : ((turns <= 99) ? 1 : 0)), 
+			3 => (turns <= 19) ? 3 : ((turns <= 25) ? 2 : ((turns <= 99) ? 1 : 0)), 
+			4 => (turns <= 13) ? 3 : ((turns <= 14) ? 2 : ((turns <= 99) ? 1 : 0)), 
+			5 => (turns <= 21) ? 3 : ((turns <= 22) ? 2 : ((turns <= 99) ? 1 : 0)), 
+			6 => (turns <= 43) ? 3 : ((turns <= 46) ? 2 : ((turns <= 99) ? 1 : 0)), 
+			_ => 0, 
+		};
+	}
+
+	private void HandleEvaluation(GameManager gameManager, int stage, int trial, int stars, int turns)
+	{
+		if (trial == 0)
+		{
+			gameManager.SetStageStars(stage, stars);
+			return;
+		}
+		if (gameManager.GetStageStars(stage) > stars)
+		{
+			gameManager.SetStageStars(stage, stars);
+		}
+		int totalStarCount = gameManager.GetTotalStarCount();
+		float num = ((!gameManager.isStarter) ? ((totalStarCount <= 11) ? ((float)totalStarCount * 5.5f) : (55f + (float)(totalStarCount - 11) * 5.71f)) : ((totalStarCount <= 10) ? ((float)totalStarCount * 6f) : (60f + (float)(totalStarCount - 10) * 5f)));
+		gameManager.WriteLog("INFO.EVAL", $"stage end.(cs{stage}, nt{trial}, tu{turns}, ns{stars}, as{totalStarCount}, as{num})");
+		gameManager.WriteLog("INFO.EVAL", gameManager.GetTotalStarString() + ")");
+		gameManager.SetTotalScore(num);
+	}
+
+	public void DestroyExceptZero()
+	{
+		for (int i = 1; i < players.Count; i++)
+		{
+			if (players[i] != null)
+			{
+				UnityEngine.Object.Destroy(players[i]);
+			}
+		}
+	}
+
+	public void DestroyPlayers()
+	{
+		for (int i = 0; i < players.Count; i++)
+		{
+			if (players[i] != null)
+			{
+				UnityEngine.Object.Destroy(players[i]);
+			}
+		}
+		players.Clear();
+		playerPanels.Clear();
+	}
+}

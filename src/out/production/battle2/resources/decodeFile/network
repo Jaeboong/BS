@@ -1,0 +1,123 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// NetworkController
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using UnityEngine;
+
+public class NetworkController : MonoBehaviour
+{
+	private string UNIQUE_NAME = "NETWORK";
+
+	private const int PORT = 8747;
+
+	private Socket mainSock;
+
+	private Dictionary<int, Socket> connectedClients = new Dictionary<int, Socket>();
+
+	private int clientNo;
+
+	private int maxClients;
+
+	private void Awake()
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Awaken");
+		UnityEngine.Object.DontDestroyOnLoad(this);
+	}
+
+	public Socket GetCilent(int clientNo)
+	{
+		return connectedClients[clientNo];
+	}
+
+	public void OpenMainSocket(int numOfClients)
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Opening main socket...");
+		maxClients = numOfClients;
+		try
+		{
+			mainSock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+			IPEndPoint localEP = new IPEndPoint(IPAddress.Any, 8747);
+			mainSock.Bind(localEP);
+			mainSock.Listen(numOfClients);
+			WaitingForConnection();
+			GameManager.manager.WriteLog("INFO", "socket opened");
+			Debug.Log("[" + UNIQUE_NAME + "] Main socket is opened.");
+		}
+		catch (Exception ex)
+		{
+			Debug.Log("[" + UNIQUE_NAME + "] Main socket is failed to open.");
+			GameManager.manager.WriteLog("ERROR", "socket open failed." + ex.ToString());
+		}
+	}
+
+	public void WaitingForConnection()
+	{
+		mainSock.BeginAccept(AcceptClient, null);
+		Debug.Log("[" + UNIQUE_NAME + "] Wainting for new connection...");
+	}
+
+	public void AcceptClient(IAsyncResult ar)
+	{
+		Socket socket = mainSock.EndAccept(ar);
+		connectedClients.Add(clientNo, socket);
+		GameManager.manager.SetConnectingClient(clientNo);
+		GameManager.manager.WriteLog("INFO", $"client connected. {clientNo}, {connectedClients.Count}");
+		Debug.Log($"[{UNIQUE_NAME}] New client has been connected as Index {clientNo}. (total clients: {connectedClients.Count})");
+		clientNo++;
+		if (GameManager.manager.GetMode() == MODE.BATTLE)
+		{
+			ReceiveFromClient(socket);
+		}
+	}
+
+	public void ReceiveFromClient(Socket socket)
+	{
+		AsyncObject asyncObject = new AsyncObject(1024);
+		asyncObject.workingSocket = socket;
+		socket.BeginReceive(asyncObject.buffer, 0, 1024, SocketFlags.None, DataReceived, asyncObject);
+	}
+
+	private void DataReceived(IAsyncResult ar)
+	{
+		AsyncObject obj = (AsyncObject)ar.AsyncState;
+		int num = obj.workingSocket.EndReceive(ar);
+		byte[] array = new byte[num];
+		Array.Copy(obj.buffer, array, num);
+		string text = Encoding.UTF8.GetString(array);
+		obj.ClearBuffer();
+		Debug.Log("[" + UNIQUE_NAME + "] data received. " + text);
+		GameManager.manager.SetCommand(text);
+		GameManager.manager.SetIsCommand(isCommand: true);
+	}
+
+	public void CloseConnection()
+	{
+		try
+		{
+			mainSock.Close();
+			mainSock.Dispose();
+			GameManager.manager.WriteLog("INFO", "socket closed.");
+			Debug.Log("[" + UNIQUE_NAME + "] Main socketet has been closed.");
+		}
+		catch (Exception message)
+		{
+			Debug.Log("[" + UNIQUE_NAME + "] Main socketet is failed to close.");
+			Debug.Log(message);
+		}
+		foreach (KeyValuePair<int, Socket> connectedClient in connectedClients)
+		{
+			connectedClient.Value.Close();
+			connectedClient.Value.Dispose();
+			Debug.Log($"[{UNIQUE_NAME}] Client connection closed.(Index {connectedClient.Key})");
+		}
+		connectedClients.Clear();
+	}
+
+	private void OnDestroy()
+	{
+		CloseConnection();
+	}
+}

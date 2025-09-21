@@ -1,0 +1,42 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// AesEncryption
+using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+
+public static class AesEncryption
+{
+	private static byte[] key = Encoding.UTF8.GetBytes("thisisakeyforsoftgroundsprojects");
+
+	private static byte[] iv = Encoding.UTF8.GetBytes("thisakeforsogrpr");
+
+	public static string Encrypt(string plainText)
+	{
+		using Aes aes = Aes.Create();
+		aes.Key = key;
+		aes.IV = iv;
+		aes.Padding = PaddingMode.PKCS7;
+		ICryptoTransform transform = aes.CreateEncryptor(aes.Key, aes.IV);
+		using MemoryStream memoryStream = new MemoryStream();
+		using CryptoStream stream = new CryptoStream(memoryStream, transform, CryptoStreamMode.Write);
+		using StreamWriter streamWriter = new StreamWriter(stream);
+		streamWriter.Write(plainText);
+		streamWriter.Close();
+		return Convert.ToBase64String(memoryStream.ToArray());
+	}
+
+	public static string Decrypt(string cipherTextBase64)
+	{
+		byte[] buffer = Convert.FromBase64String(cipherTextBase64);
+		using Aes aes = Aes.Create();
+		aes.Key = key;
+		aes.IV = iv;
+		aes.Padding = PaddingMode.PKCS7;
+		ICryptoTransform transform = aes.CreateDecryptor(aes.Key, aes.IV);
+		using MemoryStream stream = new MemoryStream(buffer);
+		using CryptoStream stream2 = new CryptoStream(stream, transform, CryptoStreamMode.Read);
+		using StreamReader streamReader = new StreamReader(stream2);
+		return streamReader.ReadToEnd();
+	}
+}

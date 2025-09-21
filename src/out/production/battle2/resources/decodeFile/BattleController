@@ -1,0 +1,310 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// BattleController
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class BattleController : MonoBehaviour
+{
+	private readonly string UNIQUE_NAME = "BATTLE";
+
+	public GameObject networkController;
+
+	public GameObject mainScreen;
+
+	public GameObject teamA;
+
+	public GameObject teamB;
+
+	public GameObject playerLineUps;
+
+	public GameObject alertPopup;
+
+	public GameObject tankPrefab;
+
+	public GameObject tankPrefab2;
+
+	public GameObject tankPrefab3;
+
+	public GameObject playerBoxPrefab;
+
+	public int maxClients = 6;
+
+	public Dictionary<string, List<GameObject>> players = new Dictionary<string, List<GameObject>>();
+
+	public List<string> playerNames = new List<string>();
+
+	public int playerJoinNo;
+
+	public GameObject[] mapButtons;
+
+	public GameObject[] autoObjects;
+
+	private SceneController sceneScript;
+
+	private void OnEnable()
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Enabled.");
+		RemoveOldNetworkController();
+		GameManager.manager.SetState(STATE.WAITING);
+		GameManager.manager.SetProceed(PROCEED.STOPPED);
+		GameManager.manager.SetTurnGoing(pass: false);
+		GameManager.manager.SetTurnPass(pass: false);
+		GameManager.manager.SetCurrentSpeed(1);
+		ClickBattleIndex(0);
+		maxClients = 6;
+		Time.timeScale = 1f;
+		DisableAutoObjects();
+		Initialize();
+		ResetNetwork();
+	}
+
+	private void RemoveOldNetworkController()
+	{
+		GameObject[] array = Object.FindObjectsOfType<GameObject>();
+		foreach (GameObject gameObject in array)
+		{
+			if (gameObject.name == "Network Controller" && gameObject.scene.name == "")
+			{
+				Object.Destroy(gameObject);
+				Debug.Log("[CLEANUP] 이전 씬에서 살아남은 NetworkController 제거 완료");
+			}
+		}
+	}
+
+	private void Start()
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Scene Started.");
+		sceneScript = new SceneController("BattleScene");
+	}
+
+	private void FixedUpdate()
+	{
+		GameManager manager = GameManager.manager;
+		if (manager.GetIsCommand())
+		{
+			string command = manager.GetCommand();
+			Debug.Log("[" + UNIQUE_NAME + "] Command caught: " + command);
+			manager.ClearCommand();
+			HandleReceivedData(command);
+		}
+	}
+
+	private void DisableAutoObjects()
+	{
+		GameObject[] array = autoObjects;
+		for (int i = 0; i < array.Length; i++)
+		{
+			array[i].SetActive(value: false);
+		}
+	}
+
+	private void Initialize()
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Initializing...");
+		GameManager manager = GameManager.manager;
+		manager.SetMode(MODE.BATTLE);
+		manager.SetState(STATE.NONE);
+		manager.SetProceed(PROCEED.STOPPED);
+		manager.SetCurrentStage(0);
+		manager.SetCurrentSpeed(1);
+		manager.SetCurrentPlayer(0);
+		manager.ClearCommand();
+		players.Add("waiting", new List<GameObject>());
+		players.Add("teama", new List<GameObject>());
+		players.Add("teamb", new List<GameObject>());
+	}
+
+	private void ResetNetwork()
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Network reset...");
+		GameObject gameObject = GameObject.Find("DontDestroyOnLoad");
+		if (gameObject != null)
+		{
+			Object.Destroy(gameObject);
+		}
+		networkController.SetActive(value: true);
+		Debug.Log("[" + UNIQUE_NAME + "] Network activated.");
+		networkController.GetComponent<NetworkController>().OpenMainSocket(maxClients);
+		Debug.Log($"[{UNIQUE_NAME}] Network opened for new connection up to {maxClients}.");
+	}
+
+	public void HandleReceivedData(string dataString)
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] dataString: " + dataString);
+		string[] array = dataString.Split(' ');
+		Debug.Log($"[{UNIQUE_NAME}] dataArray Length: {array.Length}");
+		if (dataString == null || dataString.Equals(string.Empty))
+		{
+			Debug.Log("[" + UNIQUE_NAME + "] data currupted or got end signal from client.");
+			array = new string[2] { "NONE", "NONE" };
+		}
+		string text = ((array.Length > 1) ? array[0] : dataString[0].ToString());
+		string text2 = ((array.Length > 1) ? array[1] : string.Empty);
+		Debug.Log("[" + UNIQUE_NAME + "] command: " + text + ", argument: " + text2);
+		if (text.Equals("INIT") && text2.Length > 0)
+		{
+			Debug.Log("[" + UNIQUE_NAME + "] New player has been added.(nickname: " + text2 + ")");
+			AddPlayer((text2.Length > 12) ? text2.Substring(0, 12) : text2);
+		}
+		else
+		{
+			Debug.Log("[" + UNIQUE_NAME + "] Received data is not appropriate to read.");
+			GameManager.manager.SetProceed(PROCEED.STOPPED);
+		}
+	}
+
+	public void AddPlayer(string playerName)
+	{
+		GameObject gameObject = Object.Instantiate(playerBoxPrefab, playerLineUps.transform);
+		gameObject.name = "player" + playerJoinNo;
+		gameObject.GetComponentInChildren<Text>().text = playerName;
+		if (playerJoinNo == 0)
+		{
+			gameObject.transform.localPosition = new Vector2(-530f, -170f);
+			players["teama"].Add(gameObject);
+			GameObject gameObject2 = Object.Instantiate(tankPrefab, networkController.transform);
+			gameObject2.transform.name = "player" + playerJoinNo;
+			gameObject.GetComponent<PlayerBoxDragHandler>().SetLinkedPlayer(gameObject2);
+			Tank component = gameObject2.GetComponent<Tank>();
+			component.SetPlayerNickname(playerName);
+			component.AssignSocket(playerJoinNo);
+			playerJoinNo++;
+			Debug.Log(string.Format("[{0}] New player has been added to waiting.(current waiting: {1})", UNIQUE_NAME, players["waiting"].Count));
+		}
+		else if (playerJoinNo == 2)
+		{
+			gameObject.transform.localPosition = new Vector2(-530f, -240f);
+			players["teama"].Add(gameObject);
+			GameObject gameObject3 = Object.Instantiate(tankPrefab2, networkController.transform);
+			gameObject3.transform.name = "player" + playerJoinNo;
+			gameObject.GetComponent<PlayerBoxDragHandler>().SetLinkedPlayer(gameObject3);
+			Tank component2 = gameObject3.GetComponent<Tank>();
+			component2.SetPlayerNickname(playerName);
+			component2.AssignSocket(playerJoinNo);
+			playerJoinNo++;
+			Debug.Log(string.Format("[{0}] New player has been added to waiting.(current waiting: {1})", UNIQUE_NAME, players["waiting"].Count));
+		}
+		else if (playerJoinNo == 4)
+		{
+			gameObject.transform.localPosition = new Vector2(-530f, -310f);
+			players["teama"].Add(gameObject);
+			GameObject gameObject4 = Object.Instantiate(tankPrefab3, networkController.transform);
+			gameObject4.transform.name = "player" + playerJoinNo;
+			gameObject.GetComponent<PlayerBoxDragHandler>().SetLinkedPlayer(gameObject4);
+			Tank component3 = gameObject4.GetComponent<Tank>();
+			component3.SetPlayerNickname(playerName);
+			component3.AssignSocket(playerJoinNo);
+			playerJoinNo++;
+			Debug.Log(string.Format("[{0}] New player has been added to waiting.(current waiting: {1})", UNIQUE_NAME, players["waiting"].Count));
+		}
+		else if (playerJoinNo == 1)
+		{
+			gameObject.transform.localPosition = new Vector2(530f, -170f);
+			players["teamb"].Add(gameObject);
+			GameObject gameObject5 = Object.Instantiate(tankPrefab, networkController.transform);
+			gameObject5.transform.name = "player" + playerJoinNo;
+			gameObject.GetComponent<PlayerBoxDragHandler>().SetLinkedPlayer(gameObject5);
+			Tank component4 = gameObject5.GetComponent<Tank>();
+			component4.SetPlayerNickname(playerName);
+			component4.AssignSocket(playerJoinNo);
+			playerJoinNo++;
+			Debug.Log(string.Format("[{0}] New player has been added to waiting.(current waiting: {1})", UNIQUE_NAME, players["waiting"].Count));
+		}
+		else if (playerJoinNo == 3)
+		{
+			gameObject.transform.localPosition = new Vector2(530f, -240f);
+			players["teamb"].Add(gameObject);
+			GameObject gameObject6 = Object.Instantiate(tankPrefab2, networkController.transform);
+			gameObject6.transform.name = "player" + playerJoinNo;
+			gameObject.GetComponent<PlayerBoxDragHandler>().SetLinkedPlayer(gameObject6);
+			Tank component5 = gameObject6.GetComponent<Tank>();
+			component5.SetPlayerNickname(playerName);
+			component5.AssignSocket(playerJoinNo);
+			playerJoinNo++;
+			Debug.Log(string.Format("[{0}] New player has been added to waiting.(current waiting: {1})", UNIQUE_NAME, players["waiting"].Count));
+		}
+		else if (playerJoinNo == 5)
+		{
+			gameObject.transform.localPosition = new Vector2(530f, -310f);
+			players["teamb"].Add(gameObject);
+			GameObject gameObject7 = Object.Instantiate(tankPrefab3, networkController.transform);
+			gameObject7.transform.name = "player" + playerJoinNo;
+			gameObject.GetComponent<PlayerBoxDragHandler>().SetLinkedPlayer(gameObject7);
+			Tank component6 = gameObject7.GetComponent<Tank>();
+			component6.SetPlayerNickname(playerName);
+			component6.AssignSocket(playerJoinNo);
+			playerJoinNo++;
+			Debug.Log(string.Format("[{0}] New player has been added to waiting.(current waiting: {1})", UNIQUE_NAME, players["waiting"].Count));
+		}
+		if (playerJoinNo < maxClients)
+		{
+			networkController.GetComponent<NetworkController>().WaitingForConnection();
+		}
+	}
+
+	public void ClickMoveButton(string targetScene)
+	{
+		Object.Destroy(networkController);
+		sceneScript.ChangeScene(targetScene);
+	}
+
+	public void ClickGoButton()
+	{
+		if (players["waiting"].Count > 0)
+		{
+			Debug.Log("[" + UNIQUE_NAME + "] There's a waiting player, not assigned to any team.");
+		}
+		else if (players["teama"].Count == 0 && players["teamb"].Count == 0)
+		{
+			string text = "연결된 플레이어가 없어\n시작할 수 없습니다.";
+			alertPopup.GetComponentInChildren<Text>().text = text;
+			alertPopup.SetActive(value: true);
+			Debug.Log("[" + UNIQUE_NAME + "] No players assigned.");
+		}
+		else if (players["teama"].Count != players["teamb"].Count)
+		{
+			string text2 = "팀원 수가 대등하지 않아\n시작할 수 없습니다.";
+			alertPopup.GetComponentInChildren<Text>().text = text2;
+			alertPopup.SetActive(value: true);
+			Debug.Log("[" + UNIQUE_NAME + "] Team players of A and B are not equal.");
+		}
+		else
+		{
+			sceneScript.ChangeScene("PlayBattleScene");
+		}
+	}
+
+	public void ClickBattleIndex(int indexNo)
+	{
+		if (indexNo == 4)
+		{
+			GameManager.manager.battleMapIndex = Random.Range(1, 4);
+		}
+		else
+		{
+			GameManager.manager.battleMapIndex = indexNo;
+		}
+		for (int i = 0; i < mapButtons.Length; i++)
+		{
+			if (i == indexNo)
+			{
+				mapButtons[i].GetComponent<Image>().color = Color.cyan;
+			}
+			else
+			{
+				mapButtons[i].GetComponent<Image>().color = Color.white;
+			}
+		}
+	}
+
+	public void ClickExpandButton()
+	{
+		GameManager.manager.ChangeFullscreen();
+	}
+
+	public void ClickExitButton()
+	{
+		sceneScript.ExitGame();
+	}
+}

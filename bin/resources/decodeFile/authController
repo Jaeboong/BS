@@ -1,0 +1,133 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// AuthController
+using System.Collections;
+using Newtonsoft.Json;
+using UnityEngine;
+using UnityEngine.Networking;
+using UnityEngine.UI;
+
+public class AuthController : MonoBehaviour
+{
+	public GameObject launcherController;
+
+	public InputField idInput;
+
+	public InputField keyInput;
+
+	public GameObject errorPopup;
+
+	public GameObject confirmPopup;
+
+	private const string MASTER_ID = "PBTS00202509";
+
+	private const string MASTER_KEY = "AWNC-NXTW-OQMS-PAUN";
+
+	private bool isHiddenAuth;
+
+	private bool enableBoth = true;
+
+	private void OnEnable()
+	{
+		StartCoroutine(Auth());
+		GameManager.manager.WriteLog("INFO", "authentication activated.");
+	}
+
+	private IEnumerator Auth()
+	{
+		GameManager gameManager = GameManager.manager;
+		gameManager.isStarter = false;
+		string teamId = idInput.GetComponentInChildren<Text>().text.Trim();
+		string teamKey = keyInput.GetComponentInChildren<Text>().text.Trim();
+		bool isAuthenticated = false;
+		if (teamId.Equals("") || teamKey.Equals(""))
+		{
+			Debug.Log("[AUTH] Not enough input data.");
+			errorPopup.GetComponentInChildren<Text>().text = "인증 정보를 입력해주세요.";
+			errorPopup.SetActive(value: true);
+		}
+		else
+		{
+			GameManager.manager.WriteLog("INFO", "trying to authenticate with " + teamId + ", " + teamKey + ".");
+			bool num = GameManager.manager.GetMode() == MODE.STAGE;
+			string authUrl = "https://project.ssafy.com/ssafy/api/contests/event/oneshotssafy";
+			string authPath = "/check?type=auth";
+			string contestId = "CT00000033";
+			string text = "LG00000136";
+			string stageLeagueId2 = "LG00000137";
+			string text2 = "LG00000138";
+			string text3 = (num ? text : text2);
+			gameManager.baseUrl = authUrl;
+			gameManager.authPath = authPath;
+			gameManager.contestId = contestId;
+			gameManager.leagueId = text3;
+			gameManager.resultPath = "/result";
+			if (teamId.Equals("PBTS00202509") && teamKey.Equals("AWNC-NXTW-OQMS-PAUN"))
+			{
+				GameManager.manager.WriteLog("INFO", "authenticated with masterID.");
+				Debug.Log("[AUTH] Authenticated with master id.");
+				gameManager.SetTeam("MASTER", "MASTER");
+				gameManager.SetNickname("TEST USER");
+				gameManager.isMaster = true;
+				confirmPopup.GetComponentInChildren<Text>().text = "마스터 계정으로 인증되었습니다.";
+				confirmPopup.SetActive(value: true);
+			}
+			else
+			{
+				gameManager.SetTeam(teamId, teamKey);
+				Debug.Log("[Auth] Online authentication will be tried.");
+				string uri = authUrl + authPath + "&contestId=" + contestId + "&leagueId=" + text3 + "&teamId=" + teamId + "&teamToken=" + teamKey;
+				UnityWebRequest www = UnityWebRequest.Get(uri);
+				yield return www.SendWebRequest();
+				if (www.responseCode == 200 && enableBoth)
+				{
+					GameManager.manager.WriteLog("INFO", "authentication succeed.");
+					Debug.Log($"[AUTH] Online authentication succeed.({teamId}, {teamKey})");
+					string text4 = www.downloadHandler.text;
+					Debug.Log(text4);
+					ResponseRoot? responseRoot = JsonConvert.DeserializeObject<ResponseRoot>(text4);
+					string text5 = responseRoot.data.userList[0].name;
+					string resNo = responseRoot.data.userList[0].resNo;
+					string clssName = responseRoot.data.clssName;
+					gameManager.isStarter = false;
+					GameManager.manager.SetUser(text5, resNo, clssName);
+					Debug.Log("[AUTH] User data - username: " + text5 + ", userId: " + resNo + ", clssName: " + clssName);
+					isAuthenticated = true;
+					confirmPopup.GetComponentInChildren<Text>().text = clssName + " " + text5 + "(학번: " + resNo + ")님이 맞으십니까?\n본인이 아닐 경우, 부정행위로 간주될 수 있으니 주의하시기 바랍니다.";
+					confirmPopup.SetActive(value: true);
+				}
+				else if (GameManager.manager.GetMode() == MODE.STAGE)
+				{
+					text3 = stageLeagueId2;
+					gameManager.leagueId = stageLeagueId2;
+					uri = authUrl + authPath + "&contestId=" + contestId + "&leagueId=" + text3 + "&teamId=" + teamId + "&teamToken=" + teamKey;
+					www = UnityWebRequest.Get(uri);
+					www.SetRequestHeader("Content-Type", "application/json; charset=UTF-8");
+					yield return www.SendWebRequest();
+					if (www.responseCode == 200)
+					{
+						GameManager.manager.WriteLog("INFO", "authentication succeed.");
+						Debug.Log($"[AUTH] Online authentication succeed.({teamId}, {teamKey})");
+						ResponseRoot? responseRoot2 = JsonConvert.DeserializeObject<ResponseRoot>(www.downloadHandler.text);
+						string text6 = responseRoot2.data.userList[0].name;
+						string resNo2 = responseRoot2.data.userList[0].resNo;
+						string clssName2 = responseRoot2.data.clssName;
+						gameManager.isStarter = true;
+						GameManager.manager.SetUser(text6, resNo2, clssName2);
+						Debug.Log("[AUTH] User data - username: " + text6 + ", userId: " + resNo2 + ", clssName: " + clssName2);
+						isAuthenticated = true;
+						confirmPopup.GetComponentInChildren<Text>().text = clssName2 + " " + text6 + "(학번: " + resNo2 + ")님이 맞으십니까?\n본인이 아닐 경우, 부정행위로 간주될 수 있으니 주의하시기 바랍니다.";
+						confirmPopup.SetActive(value: true);
+					}
+				}
+				if (!isAuthenticated)
+				{
+					GameManager.manager.WriteLog("ERROR", "authentication failed.");
+					Debug.Log($"[AUTH] Online authentication failed.({teamId}, {teamKey})");
+					errorPopup.GetComponentInChildren<Text>().text = "온라인 인증에 실패했습니다.\n인증키 또는 인터넷 연결 상태를 확인하십시오.";
+					errorPopup.SetActive(value: true);
+				}
+			}
+		}
+		base.gameObject.SetActive(value: false);
+	}
+}

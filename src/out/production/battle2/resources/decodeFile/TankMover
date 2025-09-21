@@ -1,0 +1,83 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// TankMover
+using UnityEngine;
+
+public class TankMover : MonoBehaviour
+{
+	[SerializeField]
+	[Tooltip("Set the forward speed for the tank")]
+	private float forwardSpeed = 20f;
+
+	[SerializeField]
+	[Tooltip("Set the backwards speed for the tank")]
+	private float backwardSpeed = 5f;
+
+	[SerializeField]
+	[Tooltip("Set the rotation speed for the tank")]
+	private float rotationSpeed = 10f;
+
+	[SerializeField]
+	[Tooltip("Set the downForce additional to the gravity")]
+	private float downForce = 100f;
+
+	[SerializeField]
+	[Tooltip("Set the max speed")]
+	private float maxSpeed = 20f;
+
+	private Rigidbody rb;
+
+	private float movementSpeedInput;
+
+	private Quaternion rotationSpeedInput = Quaternion.identity;
+
+	private Vector3 rotationAngles = Vector3.zero;
+
+	private void Awake()
+	{
+		rb = base.gameObject.GetComponent<Rigidbody>();
+		if (rb == null)
+		{
+			Debug.LogError("TankMover: No rigidBody was found on the gameObject.");
+		}
+	}
+
+	private void FixedUpdate()
+	{
+		if (movementSpeedInput != 0f)
+		{
+			rb.AddForce(base.transform.forward * movementSpeedInput, ForceMode.Impulse);
+			rb.velocity = Vector3.ClampMagnitude(rb.velocity, maxSpeed);
+			rb.AddForce(-base.transform.up * downForce * rb.velocity.magnitude);
+		}
+		rb.MoveRotation(rb.rotation * rotationSpeedInput);
+	}
+
+	public void fnc_moveTank(float inInputValue)
+	{
+		if (inInputValue > 0f)
+		{
+			movementSpeedInput = inInputValue * forwardSpeed;
+		}
+		else if (inInputValue < 0f)
+		{
+			movementSpeedInput = inInputValue * backwardSpeed;
+		}
+		else
+		{
+			movementSpeedInput = 0f;
+		}
+	}
+
+	public void fnc_rotateTank(float inInputValue)
+	{
+		if (inInputValue != 0f)
+		{
+			rotationAngles = new Vector3(0f, inInputValue * rotationSpeed * Time.deltaTime, 0f);
+			rotationSpeedInput = Quaternion.Euler(rotationAngles);
+		}
+		else
+		{
+			rotationSpeedInput = Quaternion.identity;
+		}
+	}
+}

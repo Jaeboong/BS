@@ -1,0 +1,239 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// AnimationController
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class AnimationController : MonoBehaviour
+{
+	private string UNIQUE_NAME;
+
+	public VISUALEFFECT visualEffect;
+
+	public GameObject targetObject;
+
+	public float defaultLocalX;
+
+	public float defaultLocalY;
+
+	private float moveX;
+
+	private float moveY;
+
+	public float defaultScaleX;
+
+	public float defaultScaleY;
+
+	private float moveSX;
+
+	private float moveSY;
+
+	private STATUS status;
+
+	private void Awake()
+	{
+		UNIQUE_NAME = base.transform.name;
+		Debug.Log("[" + UNIQUE_NAME + "] Awaken");
+		defaultLocalX = base.transform.localPosition.x;
+		defaultLocalY = base.transform.localPosition.y;
+		moveX = 0f;
+		moveY = 0f;
+		defaultScaleX = base.transform.localScale.x;
+		defaultScaleY = base.transform.localScale.y;
+		moveSX = 0f;
+		moveSY = 0f;
+		status = STATUS.NONE;
+	}
+
+	private void OnEnable()
+	{
+		base.gameObject.SetActive(value: true);
+		CancelInvoke();
+		switch (visualEffect)
+		{
+		case VISUALEFFECT.BLINK:
+			Blink();
+			break;
+		case VISUALEFFECT.SHOWFAST:
+			CallInvoke("ShowThis", 1f);
+			break;
+		case VISUALEFFECT.SHOWSLOW:
+			CallInvoke("ShowThis", 3f);
+			break;
+		case VISUALEFFECT.HIDEFAST:
+			CallInvoke("HideThis", 1f);
+			break;
+		case VISUALEFFECT.HIDESLOW:
+			CallInvoke("HideThis", 3f);
+			break;
+		case VISUALEFFECT.EXPAND:
+			ResizeThis(1);
+			status = STATUS.RESIZING;
+			break;
+		case VISUALEFFECT.SHRINK:
+			ResizeThis(-1);
+			status = STATUS.RESIZING;
+			break;
+		case VISUALEFFECT.APPEARFROMLEFT:
+			TakeOutFromScreen(-1, 0);
+			status = STATUS.MOVING;
+			break;
+		case VISUALEFFECT.APPEARFROMRIGHT:
+			TakeOutFromScreen(1, 0);
+			status = STATUS.MOVING;
+			break;
+		case VISUALEFFECT.APPEARFROMTOP:
+			TakeOutFromScreen(0, 1);
+			status = STATUS.MOVING;
+			break;
+		case VISUALEFFECT.APPEARFROMBOTTOM:
+			TakeOutFromScreen(0, -1);
+			status = STATUS.MOVING;
+			break;
+		case VISUALEFFECT.APPEAR:
+			break;
+		}
+	}
+
+	private void FixedUpdate()
+	{
+		if (status == STATUS.MOVING)
+		{
+			if (Math.Abs(base.transform.localPosition.x - defaultLocalX) < 40f && Math.Abs(base.transform.localPosition.y - defaultLocalY) < 40f)
+			{
+				base.transform.localPosition = new Vector3(defaultLocalX, defaultLocalY, 0f);
+				status = STATUS.NONE;
+			}
+			else
+			{
+				base.transform.localPosition = new Vector3(base.transform.localPosition.x + moveX, base.transform.localPosition.y + moveY, 0f);
+			}
+		}
+		else
+		{
+			if (status != STATUS.RESIZING)
+			{
+				return;
+			}
+			if (Math.Abs(base.transform.localScale.x - (defaultScaleX / 2f + defaultScaleX / 2f * (moveSX / Math.Abs(moveSX)))) < 0.01f)
+			{
+				if (moveSX > 0f)
+				{
+					base.transform.localScale = new Vector3(defaultScaleX, defaultScaleY);
+				}
+				else
+				{
+					base.gameObject.SetActive(value: false);
+				}
+				status = STATUS.NONE;
+			}
+			else
+			{
+				base.transform.localScale = new Vector3(base.transform.localScale.x + moveSX, base.transform.localScale.y + moveSY);
+			}
+		}
+	}
+
+	private void CallInvoke(string methodName, float seconds)
+	{
+		Invoke(methodName, seconds);
+	}
+
+	private void ShowThis()
+	{
+		base.gameObject.SetActive(value: true);
+	}
+
+	private void HideThis()
+	{
+		base.gameObject.SetActive(value: false);
+	}
+
+	public void ResizeThis(int toA)
+	{
+		float num = ((toA == 1) ? defaultScaleX : 0f);
+		float num2 = ((toA == 1) ? defaultScaleY : 0f);
+		base.transform.localScale = new Vector3(defaultScaleX - num, defaultScaleY - num2);
+		moveSX = (num - base.transform.localScale.x) * 0.1f;
+		moveSY = (num2 - base.transform.localScale.y) * 0.1f;
+	}
+
+	private void ShowTarget()
+	{
+		targetObject.SetActive(value: true);
+	}
+
+	private void HideTarget()
+	{
+		targetObject.SetActive(value: false);
+	}
+
+	private void Blink()
+	{
+		if (visualEffect == VISUALEFFECT.BLINK)
+		{
+			if (base.gameObject.GetComponent<Image>() != null)
+			{
+				base.gameObject.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.5f);
+			}
+			else
+			{
+				base.gameObject.SetActive(value: true);
+			}
+			Invoke("BlinkRoutine", 0.5f);
+		}
+		else
+		{
+			base.gameObject.SetActive(value: true);
+		}
+	}
+
+	private void BlinkRoutine()
+	{
+		if (visualEffect == VISUALEFFECT.BLINK)
+		{
+			if (base.gameObject.GetComponent<Image>() != null)
+			{
+				base.gameObject.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.4f);
+			}
+			else
+			{
+				base.gameObject.SetActive(value: false);
+			}
+			Invoke("Blink", 0.5f);
+		}
+		else
+		{
+			base.gameObject.SetActive(value: true);
+		}
+	}
+
+	private void TakeOutFromScreen(int toX, int toY)
+	{
+		if (targetObject != null)
+		{
+			targetObject.SetActive(value: true);
+		}
+		Rect rect = base.gameObject.GetComponent<Transform>().GetComponent<RectTransform>().rect;
+		float width = rect.width;
+		float height = rect.height;
+		Debug.Log($"[{UNIQUE_NAME}] Object Size: {width}, {height}");
+		float num = defaultLocalX + width * (float)toX;
+		float num2 = defaultLocalY + height * (float)toY;
+		moveX = (defaultLocalX - num) * 0.1f;
+		moveY = (defaultLocalY - num2) * 0.1f;
+		Debug.Log($"[{UNIQUE_NAME}] Moving from ({num}, {num2}) to ({defaultLocalX}, {defaultLocalY})");
+		base.transform.localPosition = new Vector3(num, num2, 0f);
+	}
+
+	public void StopEffect()
+	{
+		CancelInvoke();
+		visualEffect = VISUALEFFECT.NONE;
+	}
+
+	private void OnDisable()
+	{
+		CancelInvoke();
+	}
+}

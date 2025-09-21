@@ -1,0 +1,150 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// StageController
+using System;
+using System.Collections;
+using System.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class StageController : MonoBehaviour
+{
+	private string UNIQUE_NAME = "STAGE";
+
+	public GameObject networkController;
+
+	public GameObject userArea;
+
+	public GameObject[] buttons;
+
+	private SceneController sceneScript;
+
+	private void Start()
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Scene Started.");
+		sceneScript = new SceneController("StageScene");
+		Initialize();
+		ResetNetwork();
+	}
+
+	private void OnEnable()
+	{
+		HideButtons();
+		GameManager.manager.WriteLog("INFO", "entered stage main window.");
+		GameManager manager = GameManager.manager;
+		manager.SetTrial(0);
+		manager.SetLatestMapIndex(-1);
+		StartCoroutine(ShowButtons());
+	}
+
+	private void HideButtons()
+	{
+		GameObject[] array = buttons;
+		for (int i = 0; i < array.Length; i++)
+		{
+			array[i].GetComponent<Button>().interactable = false;
+		}
+	}
+
+	private IEnumerator ShowButtons()
+	{
+		GameManager gameManager = GameManager.manager;
+		if (gameManager.isMaster)
+		{
+			GameObject[] array = buttons;
+			for (int i = 0; i < array.Length; i++)
+			{
+				array[i].GetComponent<Button>().interactable = true;
+			}
+			yield break;
+		}
+		Task<DateTime> task = TimeService.GetServerTimeOrLocal();
+		while (!task.IsCompleted)
+		{
+			yield return null;
+		}
+		DateTime result = task.Result;
+		Debug.Log($"현재 시간: {result}");
+		string[] array2 = new string[7] { "GoTest", "Stage1", "Stage2", "Stage3", "Stage4", "Stage5", "Stage6" };
+		for (int j = 0; j < buttons.Length && j < array2.Length; j++)
+		{
+			bool interactable = gameManager.IsFeatureActive(array2[j], result);
+			buttons[j].GetComponent<Button>().interactable = interactable;
+		}
+	}
+
+	private void Initialize()
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Initializing...");
+		GameManager manager = GameManager.manager;
+		manager.SetMode(MODE.STAGE);
+		manager.SetState(STATE.NONE);
+		manager.SetProceed(PROCEED.STOPPED);
+		manager.SetCurrentStage(0);
+		manager.SetCurrentSpeed(1);
+		manager.SetCurrentPlayer(0);
+		manager.ClearCommand();
+		manager.ClearTotalStars();
+		GameManager.manager.WriteLog("INFO", "stage initialized with STAGE, NONE, STOPPED, 0, 1, 0, CLEAR.");
+		User user = manager.GetUser();
+		if (user != null)
+		{
+			string clssName = user.GetClssName();
+			string userName = user.GetUserName();
+			string userId = user.GetUserId();
+			string text = (GameManager.manager.isStarter ? "비전공" : "전공");
+			GameManager.manager.WriteLog("INFO", "user authenticated for " + userName);
+			userArea.GetComponentInChildren<Text>().text = "[" + text + "] " + clssName + "\n" + userName + "\n" + userId;
+			userArea.SetActive(value: true);
+		}
+		else
+		{
+			GameManager.manager.WriteLog("INFO", "user authenticated as anonymous");
+			userArea.SetActive(value: false);
+		}
+		Debug.Log("[" + UNIQUE_NAME + "] Initialized.");
+	}
+
+	private void ResetNetwork()
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] Network reset...");
+		networkController.SetActive(value: true);
+		GameManager.manager.WriteLog("INFO", "network socket reset.");
+		Debug.Log("[" + UNIQUE_NAME + "] Network activated.");
+	}
+
+	public void ClickStageButton(int stageNo)
+	{
+		Debug.Log("[" + UNIQUE_NAME + "] A Stage button clicked.");
+		if (stageNo == 0)
+		{
+			GameManager.manager.WriteLog("INFO", "going test selected.");
+			Debug.Log("[" + UNIQUE_NAME + "] Test selected.");
+			GameManager.manager.SetMode(MODE.EVALUTION);
+			GameManager.manager.SetCurrentStage(1);
+		}
+		else
+		{
+			GameManager.manager.WriteLog("INFO", "stage selected: " + stageNo);
+			Debug.Log($"[{UNIQUE_NAME}] Stage {stageNo} selected.");
+			GameManager.manager.SetCurrentStage(stageNo);
+		}
+		sceneScript.ChangeScene("playStageScene");
+	}
+
+	public void ClickMoveButton(string targetScene)
+	{
+		UnityEngine.Object.Destroy(networkController);
+		sceneScript.ChangeScene(targetScene);
+	}
+
+	public void ClickExpandButton()
+	{
+		GameManager.manager.WriteLog("INFO", "change resolution.");
+		GameManager.manager.ChangeFullscreen();
+	}
+
+	public void ClickExitButton()
+	{
+		sceneScript.ExitGame();
+	}
+}

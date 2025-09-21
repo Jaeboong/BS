@@ -1,0 +1,161 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// LauncherController
+using System;
+using System.Collections;
+using System.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class LauncherController : MonoBehaviour
+{
+	public GameObject subCamera;
+
+	public GameObject demoArea;
+
+	public GameObject playGround;
+
+	public GameObject authController;
+
+	public GameObject loginArea;
+
+	public GameObject startButton;
+
+	public GameObject errorPopup;
+
+	public GameObject confirmPopup;
+
+	public GameObject helpArea;
+
+	public GameObject[] modeButtons;
+
+	public GameObject versionText;
+
+	private Color DEFAULT_BUTTON_COLOR = Color.white;
+
+	private Color SELECTED_BUTTON_COLOR = Color.cyan;
+
+	private const int LAUNCHER_SCREEN_WIDTH = 1280;
+
+	private const int LAUNCHER_SCREEN_HEIGHT = 720;
+
+	private const bool LAUNCHER_FULLSCREEN = false;
+
+	private MODE[] MODE_LIST = new MODE[4]
+	{
+		MODE.STAGE,
+		MODE.BATTLE,
+		MODE.HELP,
+		MODE.NONE
+	};
+
+	private SceneController sceneScript;
+
+	private void Awake()
+	{
+		Screen.SetResolution(1280, 720, fullscreen: false);
+	}
+
+	private void Start()
+	{
+		GameManager.manager.WriteLog("INFO", "version: " + GameManager.manager.GetGameVersion());
+		versionText.GetComponentInChildren<Text>().text = "v " + GameManager.manager.GetGameVersion();
+		sceneScript = new SceneController("LauncherScene");
+		ResetAll();
+		StartCoroutine(FetchTimeCoroutine());
+	}
+
+	private IEnumerator FetchTimeCoroutine()
+	{
+		Task<DateTime> task = TimeService.GetServerTimeOrLocal();
+		while (!task.IsCompleted)
+		{
+			yield return null;
+		}
+		DateTime result = task.Result;
+		Debug.Log($"현재 시간: {result}");
+	}
+
+	public void ResetAll()
+	{
+		GameManager manager = GameManager.manager;
+		manager.SetMode(MODE.NONE);
+		manager.isMaster = false;
+		InputField[] componentsInChildren = loginArea.GetComponentsInChildren<InputField>();
+		for (int i = 0; i < componentsInChildren.Length; i++)
+		{
+			componentsInChildren[i].text = string.Empty;
+		}
+		for (int j = 0; j < modeButtons.Length; j++)
+		{
+			modeButtons[j].GetComponent<Image>().color = DEFAULT_BUTTON_COLOR;
+		}
+		authController.SetActive(value: false);
+		loginArea.SetActive(value: false);
+		errorPopup.SetActive(value: false);
+		confirmPopup.SetActive(value: false);
+		helpArea.SetActive(value: false);
+		subCamera.SetActive(value: false);
+		demoArea.SetActive(value: false);
+		playGround.SetActive(value: false);
+	}
+
+	public void EnableStartButton()
+	{
+		if (!startButton.GetComponent<Button>().IsInteractable())
+		{
+			startButton.GetComponent<Button>().interactable = true;
+		}
+	}
+
+	public void DisableConfirmPopup()
+	{
+		confirmPopup.SetActive(value: false);
+	}
+
+	public void ClickModeButton(int modeNumber)
+	{
+		GameManager.manager.WriteLog("INFO", "mode selected: " + modeNumber);
+		ResetAll();
+		MODE mode = MODE_LIST[modeNumber];
+		GameManager.manager.SetMode(mode);
+		modeButtons[modeNumber].GetComponent<Image>().color = SELECTED_BUTTON_COLOR;
+		if (modeNumber == 2)
+		{
+			helpArea.SetActive(value: true);
+		}
+		else
+		{
+			loginArea.SetActive(value: true);
+		}
+	}
+
+	public void ClickStartButton()
+	{
+		startButton.GetComponent<Button>().interactable = false;
+		authController.SetActive(value: true);
+	}
+
+	public void ClickMoveButton(string targetScene)
+	{
+		sceneScript.ChangeScene(targetScene);
+	}
+
+	public void EnterMode()
+	{
+		loginArea.SetActive(value: false);
+		if (GameManager.manager.GetMode() == MODE.STAGE)
+		{
+			sceneScript.ChangeScene("StageScene");
+		}
+		else
+		{
+			sceneScript.ChangeScene("BattleScene");
+		}
+	}
+
+	public void ClickExitButton()
+	{
+		GameManager.manager.WriteLog("INFO", "application exit.");
+		sceneScript.ExitGame();
+	}
+}

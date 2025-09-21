@@ -1,0 +1,94 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// HitChecker
+using UnityEngine;
+
+public class HitChecker : MonoBehaviour
+{
+	private GameObject _hitGameObject;
+
+	private Vector3 _hitPosition = Vector3.zero;
+
+	[SerializeField]
+	[Tooltip("Set the tags on which a hit can get triggered")]
+	private string[] tagsToTriggerHit = new string[4] { "Target", "Ground", "Enemy", "Environment" };
+
+	private float distanceToHit;
+
+	private float distanceToLastHit;
+
+	private bool validObjectFound;
+
+	private Vector3 heading = Vector3.zero;
+
+	private float pointDistance;
+
+	private Vector3 direction = Vector3.zero;
+
+	private Vector3 forwardDirection = Vector3.zero;
+
+	private string tagToCompareTo = string.Empty;
+
+	public GameObject hitGameObject
+	{
+		get
+		{
+			return _hitGameObject;
+		}
+		private set
+		{
+			_hitGameObject = value;
+		}
+	}
+
+	public Vector3 hitPosition
+	{
+		get
+		{
+			return _hitPosition;
+		}
+		private set
+		{
+			_hitPosition = value;
+		}
+	}
+
+	public bool fnc_checkForValidHitRay(Vector3 inCurrentPos, Vector3 inNextPos, Vector3 inTurretAngles)
+	{
+		validObjectFound = false;
+		heading = inNextPos - inCurrentPos;
+		pointDistance = heading.magnitude;
+		distanceToHit = pointDistance;
+		distanceToLastHit = 0f;
+		direction = heading / pointDistance;
+		forwardDirection = Quaternion.Euler(inTurretAngles) * direction;
+		tagToCompareTo = string.Empty;
+		RaycastHit[] array = Physics.RaycastAll(inCurrentPos, forwardDirection, pointDistance);
+		if (array.Length != 0)
+		{
+			for (int i = 0; i < array.Length; i++)
+			{
+				tagToCompareTo = array[i].collider.tag;
+				for (int j = 0; j < tagsToTriggerHit.Length; j++)
+				{
+					if (string.Equals(tagToCompareTo, tagsToTriggerHit[j]))
+					{
+						distanceToLastHit = Vector3.Distance(inCurrentPos, array[i].point);
+						if (distanceToLastHit < distanceToHit)
+						{
+							distanceToHit = distanceToLastHit;
+							hitGameObject = array[i].collider.gameObject;
+							hitPosition = array[i].point;
+							validObjectFound = true;
+						}
+					}
+				}
+			}
+		}
+		if (!validObjectFound)
+		{
+			hitGameObject = null;
+			hitPosition = Vector3.zero;
+		}
+		return validObjectFound;
+	}
+}

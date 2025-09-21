@@ -1,0 +1,153 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// HelpController2
+using UnityEngine;
+using UnityEngine.UI;
+
+public class HelpController2 : MonoBehaviour
+{
+	public GameObject helpArea;
+
+	public GameObject[] helpPages;
+
+	public GameObject[] selectButtons;
+
+	public GameObject previousButton;
+
+	public GameObject nextButton;
+
+	public int currentPage;
+
+	private void Awake()
+	{
+		currentPage = 0;
+	}
+
+	private void OnEnable()
+	{
+		HideAll();
+		if (currentPage == 0)
+		{
+			previousButton.SetActive(value: false);
+		}
+		else
+		{
+			previousButton.SetActive(value: true);
+		}
+		if (currentPage == helpPages.Length - 1)
+		{
+			nextButton.SetActive(value: false);
+		}
+		else
+		{
+			nextButton.SetActive(value: true);
+		}
+		DisplayNavigation(isDemo: false);
+		helpPages[currentPage].SetActive(value: true);
+	}
+
+	public void ClickPreviousButton()
+	{
+		if (currentPage > 0)
+		{
+			HideAll();
+			currentPage--;
+			helpPages[currentPage].SetActive(value: true);
+			nextButton.SetActive(value: true);
+		}
+		if (currentPage == 0)
+		{
+			previousButton.SetActive(value: false);
+		}
+		DisplayNavigation(isDemo: false);
+	}
+
+	public void ClickNextButton()
+	{
+		if (currentPage < helpPages.Length - 1)
+		{
+			HideAll();
+			currentPage++;
+			helpPages[currentPage].SetActive(value: true);
+			previousButton.SetActive(value: true);
+		}
+		if (currentPage == helpPages.Length - 1)
+		{
+			nextButton.SetActive(value: false);
+		}
+		DisplayNavigation(isDemo: false);
+	}
+
+	public void MoveToPage(int page)
+	{
+		currentPage = page;
+		HideAll();
+		if (currentPage == 0)
+		{
+			previousButton.SetActive(value: false);
+		}
+		else
+		{
+			previousButton.SetActive(value: true);
+		}
+		if (currentPage == helpPages.Length - 1)
+		{
+			nextButton.SetActive(value: false);
+		}
+		else
+		{
+			nextButton.SetActive(value: true);
+		}
+		helpPages[currentPage].SetActive(value: true);
+		DisplayNavigation(isDemo: false);
+	}
+
+	public void DisplayNavigation(bool isDemo)
+	{
+		for (int i = 0; i < selectButtons.Length; i++)
+		{
+			selectButtons[i].GetComponent<Image>().color = Color.white;
+		}
+		if (!isDemo)
+		{
+			if (currentPage == 0)
+			{
+				selectButtons[0].GetComponent<Image>().color = Color.cyan;
+			}
+			else if (1 <= currentPage && currentPage <= 2)
+			{
+				selectButtons[1].GetComponent<Image>().color = Color.cyan;
+			}
+			else if (3 <= currentPage && currentPage <= 7)
+			{
+				selectButtons[2].GetComponent<Image>().color = Color.cyan;
+			}
+			else if (8 <= currentPage && currentPage <= 9)
+			{
+				selectButtons[3].GetComponent<Image>().color = Color.cyan;
+			}
+			else
+			{
+				selectButtons[4].GetComponent<Image>().color = Color.cyan;
+			}
+		}
+	}
+
+	public void ClickHelpButton()
+	{
+		GameManager.manager.WriteLog("INFO", "help button clicked.");
+		helpArea.SetActive(value: true);
+	}
+
+	public void ClickCloseButton()
+	{
+		helpArea.SetActive(value: false);
+	}
+
+	public void HideAll()
+	{
+		for (int i = 0; i < helpPages.Length; i++)
+		{
+			helpPages[i].SetActive(value: false);
+		}
+	}
+}

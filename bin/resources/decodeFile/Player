@@ -1,0 +1,484 @@
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// Player
+using UnityEngine;
+using UnityEngine.EventSystems;
+
+public class Player : MonoBehaviour, IPointerDownHandler, IEventSystemHandler, IDragHandler
+{
+	[SerializeField]
+	private Transform _targetTr;
+
+	private Vector2 _startingPoint;
+
+	private Vector2 _moveBegin;
+
+	private Vector2 _moveOffset;
+
+	private void Awake()
+	{
+		if (_targetTr == null)
+		{
+			_targetTr = base.transform;
+		}
+	}
+
+	void IPointerDownHandler.OnPointerDown(PointerEventData eventData)
+	{
+		_startingPoint = _targetTr.position;
+		_moveBegin = eventData.position;
+	}
+
+	void IDragHandler.OnDrag(PointerEventData eventData)
+	{
+		_moveOffset = eventData.position - _moveBegin;
+		_targetTr.position = _startingPoint + _moveOffset;
+	}
+}
+
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// PlayerBoxDragHandler
+using UnityEngine;
+using UnityEngine.EventSystems;
+
+public class PlayerBoxDragHandler : MonoBehaviour, IBeginDragHandler, IEventSystemHandler, IDragHandler, IEndDragHandler, IDropHandler
+{
+	public static PlayerBoxDragHandler DraggingBox;
+
+	public GameObject linkedPlayer;
+
+	private Vector3 originalPosition;
+
+	private int originalSiblingIndex;
+
+	private CanvasGroup canvasGroup;
+
+	private void Awake()
+	{
+		canvasGroup = GetComponent<CanvasGroup>();
+	}
+
+	public void OnBeginDrag(PointerEventData eventData)
+	{
+		DraggingBox = this;
+		originalPosition = base.transform.position;
+		originalSiblingIndex = base.transform.GetSiblingIndex();
+		base.transform.SetAsLastSibling();
+		canvasGroup.blocksRaycasts = false;
+	}
+
+	public void OnDrag(PointerEventData eventData)
+	{
+		base.transform.position = Input.mousePosition;
+	}
+
+	public void OnEndDrag(PointerEventData eventData)
+	{
+		canvasGroup.blocksRaycasts = true;
+		if (DraggingBox == this)
+		{
+			base.transform.position = originalPosition;
+			base.transform.SetSiblingIndex(originalSiblingIndex);
+			DraggingBox = null;
+		}
+	}
+
+	public void OnDrop(PointerEventData eventData)
+	{
+		if (DraggingBox != null && DraggingBox != this)
+		{
+			int siblingIndex = base.transform.GetSiblingIndex();
+			Vector3 position = base.transform.position;
+			base.transform.position = DraggingBox.originalPosition;
+			DraggingBox.transform.position = position;
+			base.transform.SetSiblingIndex(DraggingBox.originalSiblingIndex);
+			DraggingBox.transform.SetSiblingIndex(siblingIndex);
+			SwapLinkedPlayers(DraggingBox.linkedPlayer, linkedPlayer);
+			DraggingBox = null;
+		}
+	}
+
+	private void SwapLinkedPlayers(GameObject a, GameObject b)
+	{
+		_ = a.transform.parent;
+		int siblingIndex = a.transform.GetSiblingIndex();
+		int siblingIndex2 = b.transform.GetSiblingIndex();
+		a.transform.SetSiblingIndex(siblingIndex2);
+		b.transform.SetSiblingIndex(siblingIndex);
+	}
+
+	public void SetLinkedPlayer(GameObject player)
+	{
+		linkedPlayer = player;
+	}
+}
+
+// Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// PlayStageController
+using UnityEngine;
+using UnityEngine.UI;
+
+public class PlayStageController : MonoBehaviour
+{
+	private readonly string UNIQUE_NAME = "PLAY STAGE";
+
+	public AudioSource audioSource;
+
+	public AudioClip endStageClip;
+
+	public GameObject mapController;
+
+	public GameObject gameController;
+
+	public GameObject scoreRegister;
+
+	public GameObject wholeFrame;
+
+	public GameObject halfFrame;
+
+	public GameObject miniFrame;
+
+	public GameObject codeEditor;
+
+	public GameObject stageName;
+
+	public GameObject[] speedButtons;
+
+	public GameObject notification;
+
+	public GameObject overlay;
+
+	public GameObject popup;
+
+	public GameObject popupTitle;
+
+	public GameObject evalPopup;
+
+	public GameObject[] starIcons;
+
+	public GameObject[] resultImages;
+
+	public GameObject options;
+
+	public GameObject scoreBox;
+
+	public GameObject evalStageList;
+
+	public GameObject evalFailed;
+
+	public GameObject evalSuccess;
+
+	public GameObject evalMessage;
+
+	public GameObject staticMessage;
+
+	public GameObject evalSkipButton;
+
+	public GameObject evalMainButton;
+
+	public GameObject hintPopup;
+
+	public GameObject socreGuide;
+
+	public GameObject starPrefab;
+
+	public Sprite[] POPUP_TITLE_IMAGES;
+
+	private Color PRESSED_BUTTON_COLOR = new Color(0.47058824f, 0.5882353f, 0.9411765f);
+
+	private GameObject networkController;
+
+	private STATE currentState;
+
+	private bool isTestOnly;
+
+	public SceneController sceneScript;
+
+	private void Awake()
+	{
+		int currentSpeed = GameManager.manager.GetCurrentSpeed();
+		SetSpeed(currentSpeed);
+		isTestOnly = false;
+		networkController = GameObject.Find("Network Controller");
+	}
+
+	private void OnEnable()
+	{
+		hintPopup.SetActive(value: false);
+	}
+
+	private void Start()
+	{
+		sceneScript = new SceneController("PlayStageScene");
+		stageName.GetComponentInChildren<Text>().text = "Stage " + GameManager.manager.GetCurrentStage();
+		stageName.SetActive(value: true);
+		if (GameManager.manager.GetMode() == MODE.STAGE)
+		{
+			StartToPractice();
+		}
+		else if (GameManager.manager.GetMode() == MODE.EVALUTION)
+		{
+			StartToEvaluation();
+		}
+		gameController.SetActive(value: true);
+	}
+
+	private void StartToPractice()
+	{
+		wholeFrame.SetActive(value: false);
+		halfFrame.SetActive(value: false);
+		miniFrame.SetActive(value: false);
+		codeEditor.SetActive(value: false);
+		notification.GetComponentInChildren<Text>().text = "Waiting for a player...";
+		notification.SetActive(value: true);
+		networkController.SetActive(value: true);
+		networkController.GetComponent<NetworkController>().OpenMainSocket(1);
+	}
+
+	private void StartToEvaluation()
+	{
+		wholeFrame.SetActive(value: false);
+		halfFrame.SetActive(value: false);
+		miniFrame.SetActive(value: false);
+		codeEditor.SetActive(value: false);
+		if (GameManager.manager.GetCurrentStage() == 1 && GameManager.manager.GetTrial() == 0)
+		{
+			notification.GetComponentInChildren<Text>().text = "Waiting for a player...";
+			notification.SetActive(value: true);
+			networkController.SetActive(value: true);
+			networkController.GetComponent<NetworkController>().OpenMainSocket(1);
+		}
+	}
+
+	public void EndStage()
+	{
+		GameManager.manager.WriteLog("INFO", "Stage ended.");
+		if (GameManager.manager.CanPlayBGM() && (bool)audioSource && (bool)endStageClip)
+		{
+			audioSource.PlayOneShot(endStageClip);
+		}
+		GameManager manager = GameManager.manager;
+		if (manager.GetMode() == MODE.STAGE)
+		{
+			popupTitle.GetComponent<Image>().sprite = POPUP_TITLE_IMAGES[GameManager.manager.GetCurrentStage()];
+			int currentStars = manager.GetCurrentStars();
+			for (int i = 0; i < starIcons.Length; i++)
+			{
+				if (i < currentStars)
+				{
+					starIcons[i].GetComponent<Image>().color = Color.white;
+				}
+				else
+				{
+					starIcons[i].GetComponent<Image>().color = Color.gray;
+				}
+			}
+			resultImages[0].SetActive(currentStars == 0);
+			resultImages[1].SetActive(currentStars > 0);
+			overlay.SetActive(value: true);
+			popup.SetActive(value: true);
+			evalPopup.SetActive(value: false);
+			options.SetActive(value: false);
+			scoreBox.SetActive(value: false);
+			if (networkController.activeSelf)
+			{
+				networkController.GetComponent<NetworkController>().CloseConnection();
+			}
+			Time.timeScale = 0f;
+		}
+		else
+		{
+			if (manager.GetMode() != MODE.EVALUTION)
+			{
+				return;
+			}
+			overlay.SetActive(value: true);
+			popup.SetActive(value: false);
+			evalPopup.SetActive(value: true);
+			options.SetActive(value: false);
+			scoreBox.SetActive(value: false);
+			int currentStars2 = manager.GetCurrentStars();
+			Debug.Log("CURRENT STARS: " + currentStars2);
+			int[] totalStars = manager.GetTotalStars();
+			int currentStage = manager.GetCurrentStage();
+			string text = string.Empty;
+			Debug.Log($"totalStars: {totalStars.Length}, Stage1Stars: {totalStars[1]}");
+			for (int j = 1; j <= currentStage; j++)
+			{
+				text += $"Stage {j}\n";
+				for (int k = 0; k < totalStars[j]; k++)
+				{
+					GameObject obj = Object.Instantiate(starPrefab, evalPopup.transform);
+					int num = -210 + 50 * k;
+					int num2 = 178 - 53 * j;
+					obj.transform.localPosition = new Vector2(num, num2);
+					obj.SetActive(value: true);
+				}
+			}
+			evalStageList.GetComponentInChildren<Text>().text = text;
+			evalStageList.SetActive(value: true);
+			if (currentStars2 == 0)
+			{
+				gameController.GetComponent<GameController>().DestroyPlayers();
+				evalSuccess.SetActive(value: false);
+				evalFailed.SetActive(value: true);
+				if (manager.GetTeam().GetTeamId().Equals("MASTER"))
+				{
+					staticMessage.GetComponentInChildren<Text>().text = "평가 진행이\n종료되었습니다.";
+					evalMessage.SetActive(value: false);
+					staticMessage.SetActive(value: true);
+					evalSkipButton.SetActive(value: false);
+					evalMainButton.SetActive(value: true);
+				}
+				else
+				{
+					int trial = GameManager.manager.GetTrial();
+					GameManager.manager.WriteLog("INFO.EVAL", $"trying to send result...(c{currentStage}, t{trial}, s{currentStars2})");
+					evalMessage.GetComponentInChildren<Text>().text = "결과를\n서버에\n전송중입니다.";
+					evalMessage.SetActive(value: true);
+					staticMessage.SetActive(value: false);
+					evalSkipButton.SetActive(value: false);
+					evalMainButton.SetActive(value: false);
+					scoreRegister.SetActive(value: true);
+				}
+				return;
+			}
+			evalSuccess.SetActive(value: true);
+			evalFailed.SetActive(value: false);
+			if (currentStage < 6)
+			{
+				gameController.GetComponent<GameController>().DestroyExceptZero();
+				int trial2 = GameManager.manager.GetTrial();
+				GameManager.manager.WriteLog("INFO.EVAL", $"to move next...(c{currentStage}, t{trial2}, s{currentStars2})");
+				evalMessage.GetComponentInChildren<Text>().text = "잠시 후\n자동으로\n넘어갑니다.";
+				evalMessage.SetActive(value: true);
+				staticMessage.SetActive(value: false);
+				evalSkipButton.SetActive(value: true);
+				evalMainButton.SetActive(value: false);
+				Invoke("GoNextStage", 3f);
+				return;
+			}
+			if (currentStage == 6 && GameManager.manager.GetTrial() == 0)
+			{
+				gameController.GetComponent<GameController>().DestroyExceptZero();
+				int trial3 = GameManager.manager.GetTrial();
+				GameManager.manager.WriteLog("INFO.EVAL", $"to move next...(c{currentStage}, t{trial3}, s{currentStars2})");
+				evalMessage.GetComponentInChildren<Text>().text = "잠시 후\n자동으로\n넘어갑니다.";
+				evalMessage.SetActive(value: true);
+				staticMessage.SetActive(value: false);
+				evalSkipButton.SetActive(value: true);
+				evalMainButton.SetActive(value: false);
+				Invoke("GoNextStage", 3f);
+				return;
+			}
+			gameController.GetComponent<GameController>().DestroyPlayers();
+			if (manager.GetTeam().GetTeamId().Equals("MASTER"))
+			{
+				staticMessage.GetComponentInChildren<Text>().text = "평가 진행이\n종료되었습니다.";
+				evalMessage.SetActive(value: false);
+				staticMessage.SetActive(value: true);
+				evalSkipButton.SetActive(value: false);
+				evalMainButton.SetActive(value: true);
+			}
+			else
+			{
+				int trial4 = GameManager.manager.GetTrial();
+				GameManager.manager.WriteLog("INFO.EVAL", $"trying to send result...(c{currentStage}, t{trial4}, s{currentStars2})");
+				evalMessage.GetComponentInChildren<Text>().text = "결과를\n서버에\n전송중입니다.";
+				evalMessage.SetActive(value: true);
+				staticMessage.SetActive(value: false);
+				evalSkipButton.SetActive(value: false);
+				evalMainButton.SetActive(value: false);
+				scoreRegister.SetActive(value: true);
+			}
+		}
+	}
+
+	public void ClickRetryButton()
+	{
+		int currentStage = GameManager.manager.GetCurrentStage();
+		GameManager.manager.SetCurrentStage(currentStage);
+		gameController.GetComponent<GameController>().DestroyPlayers();
+		Debug.Log("Retry Button cliecked");
+		sceneScript.ChangeScene("playStageScene");
+	}
+
+	public void ClickOptionButton()
+	{
+		GameManager manager = GameManager.manager;
+		currentState = manager.GetState();
+		Debug.Log("[PLAY STAGE] option clicked");
+		Time.timeScale = 0f;
+		manager.SetState(STATE.PAUSED);
+		overlay.SetActive(value: true);
+		popup.SetActive(value: false);
+		options.SetActive(value: true);
+	}
+
+	public void GoNextStage()
+	{
+		CancelInvoke();
+		GameManager manager = GameManager.manager;
+		int currentStage = manager.GetCurrentStage();
+		if (manager.GetTrial() == 0)
+		{
+			manager.SetTrial(1);
+		}
+		else
+		{
+			manager.SetCurrentStage(currentStage + 1);
+			manager.SetTrial(0);
+		}
+		manager.SetState(STATE.NONE);
+		manager.SetProceed(PROCEED.STOPPED);
+		sceneScript.ChangeScene("playStageScene");
+	}
+
+	public void ClickResumeButton()
+	{
+		Time.timeScale = 1f;
+		GameManager.manager.SetState(currentState);
+		overlay.SetActive(value: false);
+		options.SetActive(value: false);
+	}
+
+	public void ClickReturnButton()
+	{
+		GameManager manager = GameManager.manager;
+		manager.SetState(STATE.NONE);
+		manager.SetProceed(PROCEED.STOPPED);
+		sceneScript.ChangeScene("StageScene");
+		Object.Destroy(networkController);
+	}
+
+	public void SetSpeed(int index)
+	{
+		GameManager.manager.SetCurrentSpeed(index);
+		GameObject[] array = speedButtons;
+		for (int i = 0; i < array.Length; i++)
+		{
+			array[i].GetComponent<Image>().color = Color.white;
+		}
+		speedButtons[index].GetComponent<Image>().color = PRESSED_BUTTON_COLOR;
+		switch (index)
+		{
+		case 0:
+			Time.timeScale = 0f;
+			break;
+		case 1:
+			Time.timeScale = 1f;
+			break;
+		case 2:
+			Time.timeScale = 2f;
+			break;
+		case 3:
+			Time.timeScale = 3f;
+			break;
+		case 4:
+			Time.timeScale = 5f;
+			break;
+		case 5:
+			Time.timeScale = 10f;
+			break;
+		}
+	}
+}
