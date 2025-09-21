@@ -244,14 +244,33 @@ public class Tank3 {
                          // 주변 적 부재/원거리: 즉시 전진 탐색
                          output = chooseRandomAdvanceMove(mapData, myPos, DIRS, MOVE_CMDS, turn); debugMode = "RANDOM_ADV";
                      } else {
-                         // 축 포위 포지셔닝 우선 시도
+                         // [RETREAT] 지는 싸움 회피: 선제 불리 or 탄약 없음 or 체력 낮음일 때 즉시 도주
+                         int[] enemyPosEval = findNearestEnemyToMe(mapData, myPos);
+                         if (enemyPosEval != null) {
+                             int myT0 = turnsToShoot(mapData, myPos, enemyPosEval, DIRS, 12);
+                             int enT0 = turnsToShootIgnoreZone(mapData, enemyPosEval, myPos, DIRS, 12);
+                             int[] ammoNow = getMyAmmo();
+                             boolean lowHp = getMyHp() <= 35;
+                             boolean noAmmo = (ammoNow[0] + ammoNow[1]) == 0;
+                             int dEnemyNow = Math.abs(myPos[0]-enemyPosEval[0])+Math.abs(myPos[1]-enemyPosEval[1]);
+                             boolean firstStrikeBad = myT0 > enT0;
+                             if (firstStrikeBad || noAmmo || (lowHp && dEnemyNow <= 5)) {
+                                 String flee = chooseRetreatMove(mapData, myPos, DIRS, MOVE_CMDS, threat);
+                                 if (flee != null) { output = flee; debugMode = "RETREAT"; }
+                                 else { output = chooseRandomAdvanceMove(mapData, myPos, DIRS, MOVE_CMDS, turn); debugMode = "RETREAT_FALLBACK"; }
+                                 // 조기 결정
+                             }
+                         }
+                         // 끌어내기 접근(중거리): 선제 유리+정렬/시야선 고려
+                         String tease = chooseTeaseApproachMove(mapData, myPos, DIRS, MOVE_CMDS, threat);
+                         // 축 포위 포지셔닝 보조
                          String axisMove = null;
-                         if (stuckTurnCount >= STALEMATE_THRESHOLD || enemyNearby(mapData, myPos)) {
+                         if (tease==null && (stuckTurnCount >= STALEMATE_THRESHOLD || enemyNearby(mapData, myPos))) {
                              axisMove = moveToAxisEncirclement(mapData, myPos, DIRS, MOVE_CMDS, threat);
                          }
-                         String act = (axisMove!=null)? axisMove : chooseRoleEngageMove(mapData, myPos, DIRS, MOVE_CMDS, threat, TankRole.AGGRESSOR);
+                         String act = (tease!=null)? tease : (axisMove!=null ? axisMove : chooseRoleEngageMove(mapData, myPos, DIRS, MOVE_CMDS, threat, TankRole.AGGRESSOR));
                          if (act == null) act = choosePatrolMove(mapData, myPos, DIRS, MOVE_CMDS, threat);
-                         output = act; debugMode = (axisMove!=null? "AXIS_ENCIRCLE" : "ENGAGE_OR_PATROL");
+                         output = act; debugMode = (tease!=null? "TEASE_APPROACH" : (axisMove!=null? "AXIS_ENCIRCLE" : "ENGAGE_OR_PATROL"));
                      }
                  }
              }
@@ -259,6 +278,8 @@ public class Tank3 {
 
             // 메인 프로그램에서 명령을 처리할 수 있도록 명령어를 submit()의 인자로 전달
             System.out.printf("[T3][turn=%d] pos=(%d,%d) action=%s mode=%s df=%d de=%d\n", turn, myPos[0], myPos[1], output, debugMode, distToF, distToEnemy);
+            String stateLabel = (debugMode.contains("FIRE")? "Fire" : debugMode.contains("SUPPLY")? "Supply" : debugMode.contains("DEF")? "Defense" : debugMode.contains("RETREAT")? "Retreat" : debugMode.contains("REGROUP")? "Regroup" : debugMode.contains("ADV")? "Advance" : debugMode.contains("TEASE")? "Tease" : debugMode.contains("AXIS")? "Encircle" : debugMode.contains("PATROL")? "Patrol" : "Engage/Patrol");
+            System.out.printf("[STATE] Tank3 - %s\n", stateLabel);
             // 이동 기록 갱신
             lastWasMove = output.endsWith("A") && !output.contains(" F");
             if (lastWasMove) { char ch = output.charAt(0); lastMoveDir = (ch=='R'?0: ch=='D'?1: ch=='L'?2: 3); } else { lastMoveDir = -1; }
@@ -757,34 +778,6 @@ public class Tank3 {
         INTERCEPTOR   // 차단수: 적의 도주로 차단
     }
 
-    // 팀 상황 분석 클래스
-    private static class TeamSituationAnalyzer {
-        // 아군 위치 파싱
-        static int[] getMyPosition(String[][] grid) {
-            for (int r = 0; r < grid.length; r++) {
-                for (int c = 0; c < grid[0].length; c++) {
-                    if ("M".equals(grid[r][c])) return new int[]{r, c};
-                }
-            }
-            return null;
-        }
-
-        static int[] getAllyPosition(String[][] grid, String allySymbol) {
-            for (int r = 0; r < grid.length; r++) {
-                for (int c = 0; c < grid[0].length; c++) {
-                    if (allySymbol.equals(grid[r][c])) return new int[]{r, c};
-                }
-            }
-            return null;
-        }
-
-        // 거리 계산
-        static int getDistance(int[] pos1, int[] pos2) {
-            if (pos1 == null || pos2 == null) return Integer.MAX_VALUE;
-            return Math.abs(pos1[0] - pos2[0]) + Math.abs(pos1[1] - pos2[1]);
-        }
-
-    }
 
     private static int getMyHp(){ String[] me = myAllies.get("M"); return (me!=null&&me.length>=1)? parseIntSafe(me[0]) : 0; }
     private static int[] getMyAmmo(){ String[] me=myAllies.get("M"); int ns=(me!=null&&me.length>=3)? parseIntSafe(me[2]):0; int ms=(me!=null&&me.length>=4)? parseIntSafe(me[3]):0; return new int[]{ns,ms}; }
@@ -913,4 +906,74 @@ public class Tank3 {
     private static int[] preferredAxisOrder(){ int idx=getClientIndex()%3; if(idx==0) return new int[]{3,2,0,1}; if(idx==1) return new int[]{2,0,3,1}; return new int[]{0,3,2,1}; }
     private static boolean[][] buildAxisGoals(String[][] grid, int[] enemyPos, int[][] dirs, boolean[][] threat){ boolean[][] goals=new boolean[grid.length][grid[0].length]; int[] ord=preferredAxisOrder(); boolean any=false; for(int oi=0; oi<ord.length; oi++){ int d=ord[oi]; for(int dist=3; dist>=2; dist--){ int gr=enemyPos[0]+dirs[d][0]*dist, gc=enemyPos[1]+dirs[d][1]*dist; if(!isInside(grid,gr,gc)) continue; String cell=grid[gr][gc]; if(cell==null) continue; if(!isWalkable(cell)) continue; if(isBlockedByAllyTurretZone(grid,gr,gc)) continue; if(threat!=null && threat[gr][gc]) continue; goals[gr][gc]=true; any=true; break; } } return any?goals:null; }
     private static String moveToAxisEncirclement(String[][] grid, int[] myPos, int[][] dirs, String[] moveCmds, boolean[][] threat){ int[] enemy=findNearestEnemyToMe(grid,myPos); if(enemy==null) return null; boolean[][] goals=buildAxisGoals(grid, enemy, dirs, threat); if(goals==null) return null; int[] hPos=findAllyTurret(grid); Queue<String> path=aStarToGoals(grid, myPos, goals, dirs, moveCmds, threat, hPos); if(path==null||path.isEmpty()) return null; return path.poll(); }
-}
+
+    // ===== 끌어내기 접근(중거리 5..8에서 선제 턴 유리 유지) =====
+    private static String chooseTeaseApproachMove(String[][] grid, int[] myPos, int[][] dirs, String[] moveCmds, boolean[][] threat){
+        int[] enemy = findNearestEnemyToMe(grid, myPos); if(enemy==null) return null;
+        int curD = Math.abs(myPos[0]-enemy[0])+Math.abs(myPos[1]-enemy[1]);
+        if (curD < 5 || curD > 8) return null;
+        int bestDir=-1; int bestMyTurns=Integer.MAX_VALUE; int bestMargin=Integer.MIN_VALUE; int bestDistBias=Integer.MAX_VALUE; int bestAlignScore=-1;
+        for(int d=0; d<4; d++){
+            int nr=myPos[0]+dirs[d][0], nc=myPos[1]+dirs[d][1];
+            if(nr<0||nr>=grid.length||nc<0||nc>=grid[0].length) continue; String cell=grid[nr][nc];
+            if(!isWalkable(cell)) continue; if(isBlockedByAllyTurretZone(grid,nr,nc)) continue;
+            if(threat!=null && threat[nr][nc]) continue;
+            int nd = Math.abs(nr-enemy[0])+Math.abs(nc-enemy[1]); if (nd<4 || nd>6) continue; // 4~6 유지
+            int myT = turnsToShoot(grid, new int[]{nr,nc}, enemy, dirs, 12);
+            int enT = turnsToShootIgnoreZone(grid, enemy, new int[]{nr,nc}, dirs, 12);
+            if (myT > enT) continue; // 선제 불리 배제
+            if (canShoot(grid, enemy, new int[]{nr,nc}, dirs)) continue; // 적 즉시 사격 위치 금지
+            boolean aligned = (nr==enemy[0] || nc==enemy[1]);
+            boolean clearLine = aligned && hasClearLine(grid, new int[]{nr,nc}, enemy, dirs);
+            int alignScore = clearLine? 2 : (aligned? 1: 0);
+            int margin = (enT==Integer.MAX_VALUE?50:enT) - (myT==Integer.MAX_VALUE?50:myT);
+            int distBias = Math.abs(nd-4);
+            if (myT<bestMyTurns || (myT==bestMyTurns && (margin>bestMargin || (margin==bestMargin && (alignScore>bestAlignScore || (alignScore==bestAlignScore && distBias<bestDistBias)))))){
+                bestMyTurns=myT; bestMargin=margin; bestDistBias=distBias; bestAlignScore=alignScore; bestDir=d;
+            }
+        }
+        return bestDir==-1? null : moveCmds[bestDir];
+    }
+
+    private static boolean hasClearLine(String[][] grid, int[] from, int[] to, int[][] dirs){
+        if (from[0]!=to[0] && from[1]!=to[1]) return false;
+        int dr = Integer.compare(to[0]-from[0], 0);
+        int dc = Integer.compare(to[1]-from[1], 0);
+        int r=from[0], c=from[1];
+        while(true){
+            r+=dr; c+=dc; if(r<0||r>=grid.length||c<0||c>=grid[0].length) return false;
+            if (r==to[0] && c==to[1]) return true;
+            String cell=grid[r][c]; if(cell==null) return false;
+            if ("R".equals(cell) || "T".equals(cell) || "F".equals(cell)) return false;
+            if ("M".equals(cell) || "H".equals(cell) || cell.startsWith("M") || cell.startsWith("E") || "X".equals(cell)) return false;
+        }
+    }
+
+    // ===== 교전 BFS 유틸: 사거리3 직선 LoS 기준 최소 이동 턴 =====
+    private static int turnsToShoot(String[][] grid, int[] start, int[] target, int[][] dirs, int maxDepth){ return coreTurnsToShoot(grid,start,target,dirs,maxDepth,false); }
+    private static int turnsToShootIgnoreZone(String[][] grid, int[] start, int[] target, int[][] dirs, int maxDepth){ return coreTurnsToShoot(grid,start,target,dirs,maxDepth,true); }
+    private static int coreTurnsToShoot(String[][] grid, int[] start, int[] target, int[][] dirs, int maxDepth, boolean ignoreZone){ if(start==null||target==null) return Integer.MAX_VALUE; if(canShoot(grid,start,target,dirs)) return 0; int rows=grid.length, cols=grid[0].length; boolean[][] vis=new boolean[rows][cols]; ArrayDeque<int[]> q=new ArrayDeque<>(); q.offer(new int[]{start[0],start[1],0}); vis[start[0]][start[1]]=true; while(!q.isEmpty()){ int[] cur=q.poll(); int r=cur[0],c=cur[1],d=cur[2]; if(d>=maxDepth) continue; for(int i=0;i<4;i++){ int nr=r+dirs[i][0], nc=c+dirs[i][1]; if(nr<0||nr>=rows||nc<0||nc>=cols) continue; if(vis[nr][nc]) continue; String cell=grid[nr][nc]; if(cell==null) continue; if(!isWalkable(cell)) continue; if(!ignoreZone && isBlockedByAllyTurretZone(grid,nr,nc)) continue; vis[nr][nc]=true; int nd=d+1; int[] np=new int[]{nr,nc}; if(canShoot(grid,np,target,dirs)) return nd; q.offer(new int[]{nr,nc,nd}); } } return Integer.MAX_VALUE; }
+
+    // 지는 싸움 회피 이동: 적과의 거리를 늘리고, 적의 즉시 사격 라인을 피함
+    private static String chooseRetreatMove(String[][] grid, int[] myPos, int[][] dirs, String[] moveCmds, boolean[][] threat){
+        int[] enemy = findNearestEnemyToMe(grid, myPos); if(enemy==null) return null;
+        int curDist = Math.abs(myPos[0]-enemy[0])+Math.abs(myPos[1]-enemy[1]);
+        int best=-1; int bestScore=Integer.MIN_VALUE;
+        for(int d=0; d<4; d++){
+            int nr=myPos[0]+dirs[d][0], nc=myPos[1]+dirs[d][1];
+            if(nr<0||nr>=grid.length||nc<0||nc>=grid[0].length) continue; String cell=grid[nr][nc];
+            if(!isWalkable(cell)) continue; if(isBlockedByAllyTurretZone(grid,nr,nc)) continue;
+            if(threat!=null && threat[nr][nc]) continue;
+            int nd = Math.abs(nr-enemy[0])+Math.abs(nc-enemy[1]);
+            int score = 0; if (nd>curDist) score += 40; else if (nd==curDist) score += 5; else score -= 40;
+            if ("S".equals(cell)) score -= 3;
+            if (canShoot(grid, enemy, new int[]{nr,nc}, dirs)) score -= 50;
+            int myT = turnsToShoot(grid, new int[]{nr,nc}, enemy, dirs, 12);
+            int enT = turnsToShootIgnoreZone(grid, enemy, new int[]{nr,nc}, dirs, 12);
+            int margin = (enT==Integer.MAX_VALUE?50:enT) - (myT==Integer.MAX_VALUE?50:myT);
+            score += Math.min(30, Math.max(-30, margin*5));
+            if(score>bestScore){ bestScore=score; best=d; }
+        }
+        return best==-1? null : moveCmds[best];
+    }
+ }

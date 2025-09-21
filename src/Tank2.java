@@ -36,6 +36,9 @@ public class Tank2 {
     private static int stuckTurnCount = 0; // 연속 교착 턴 수
     private static boolean emergencySupplyMode = false; // 응급 보급 모드
     private static int lastSupplyTurn = -10; // 마지막 보급 시도 턴
+    // 집결 반복 제어
+    private static int regroupStreak = 0; // 연속 REGROUP 횟수
+    private static int regroupCooldown = 0; // REGROUP 회피 쿨다운(턴)
     
     public static void main(String[] args) {
         ARGS = args.length > 0 ? args[0] : "";
@@ -183,6 +186,24 @@ public class Tank2 {
             distToF = distanceToNearestSupplyAdjacency(mapData, myPos, DIRS);
             distToEnemy = distanceToNearestEnemy(mapData, myPos);
             int teamMegaTotal = estimateTeamMega();
+            if (regroupCooldown > 0) regroupCooldown--;
+
+            // [RETREAT] 지는 싸움 회피: 선제 불리 or 탄약 없음 or 체력 낮음일 때 즉시 도주
+            if (distToEnemy >= 0 && distToEnemy <= 6) {
+                int[] enemyPos = findNearestEnemyToMe(mapData, myPos);
+                int myT0 = turnsToShoot(mapData, myPos, enemyPos, DIRS, 12);
+                int enT0 = turnsToShootIgnoreZone(mapData, enemyPos, myPos, DIRS, 12);
+                int[] ammoNow = getMyAmmo();
+                boolean lowHp = getMyHp() <= 35;
+                boolean noAmmo = (ammoNow[0] + ammoNow[1]) == 0;
+                boolean firstStrikeBad = myT0 > enT0;
+                if (firstStrikeBad || noAmmo || (lowHp && distToEnemy <= 5)) {
+                    String flee = chooseRetreatMove(mapData, myPos, DIRS, MOVE_CMDS, threat);
+                    if (flee != null) { output = flee; debugMode = "RETREAT"; }
+                    else { output = chooseBreakoutMove(mapData, myPos, DIRS, MOVE_CMDS); if (output==null) output = chooseRandomAdvanceMove(mapData, myPos, DIRS, MOVE_CMDS, turn); debugMode = "RETREAT_FALLBACK"; }
+                    // 조기 결정
+                    }
+            }
 
             // 보급 상한: 2발 이상이면 보급 우선순위 자체 차단
             if (myMega >= MEGA_TARGET_PER_TANK) { codesAvailable = false; }
@@ -234,25 +255,41 @@ public class Tank2 {
                     System.out.println("[T2-EMERGENCY] Emergency supply mode activated! Risk level high.");
                 }
             } else {
+                // [GO_SUPPLY_WAIT] 코드가 없어도 보급 대기 위치로 이동(초기 턴 종료 이후), 적 2턴 연속 접근이 아닐 때
+                if (myMega < MEGA_TARGET_PER_TANK && distToF >= 0 && enemyApproachStreak < 2 && !isDefenseEmergency(mapData)) {
+                    Queue<String> pathToF = aStarToSupplyAdjacency(mapData, myPos, DIRS, MOVE_CMDS, threat, turn);
+                    if (pathToF != null && !pathToF.isEmpty()) {
+                        output = pathToF.poll();
+                        debugMode = "GO_SUPPLY_WAIT";
+                    }
+                }
                 emergencySupplyMode = false; // 응급 모드 해제
                     // 무적/무한 패트롤 상황: 적이 없고 교착이면 집결 후 랜덤 전진
                     if (stuckTurnCount >= STALEMATE_THRESHOLD && (distToEnemy < 0 || distToEnemy > 8)) {
-                        int[] allyCent = computeAllyCentroid(mapData);
-                        boolean[][] rvGoals = buildRendezvousGoals(mapData, allyCent, null);
-                        if (rvGoals != null) {
-                            int[] hPos = findAllyTurret(mapData);
-                            Queue<String> path = aStarToGoals(mapData, myPos, rvGoals, DIRS, MOVE_CMDS, threat, hPos);
-                            if (path != null && !path.isEmpty()) {
-                                output = path.poll(); debugMode = "REGROUP";
+                        if (regroupCooldown > 0 || regroupStreak >= 2) {
+                            String bo = chooseBreakoutMove(mapData, myPos, DIRS, MOVE_CMDS);
+                            if (bo != null) { output = bo; debugMode = "REGROUP_COOLDOWN_BREAKOUT"; }
+                            else { output = chooseRandomAdvanceMove(mapData, myPos, DIRS, MOVE_CMDS, turn); debugMode = "REGROUP_COOLDOWN_ADV"; }
+                            regroupCooldown = 3; // 몇 턴간 집결 재시도 금지
+                            regroupStreak = 0;
+                        } else {
+                            int[] allyCent = computeAllyCentroid(mapData);
+                            boolean[][] rvGoals = buildRendezvousGoals(mapData, allyCent, null);
+                            if (rvGoals != null) {
+                                int[] hPos = findAllyTurret(mapData);
+                                Queue<String> path = aStarToGoals(mapData, myPos, rvGoals, DIRS, MOVE_CMDS, threat, hPos);
+                                if (path != null && !path.isEmpty()) {
+                                    output = path.poll(); debugMode = "REGROUP";
+                                } else {
+                                    String bo = chooseBreakoutMove(mapData, myPos, DIRS, MOVE_CMDS);
+                                    if (bo != null) { output = bo; debugMode = "BREAKOUT"; }
+                                    else { output = chooseRandomAdvanceMove(mapData, myPos, DIRS, MOVE_CMDS, turn); debugMode = "RANDOM_ADV"; }
+                                }
                             } else {
                                 String bo = chooseBreakoutMove(mapData, myPos, DIRS, MOVE_CMDS);
                                 if (bo != null) { output = bo; debugMode = "BREAKOUT"; }
                                 else { output = chooseRandomAdvanceMove(mapData, myPos, DIRS, MOVE_CMDS, turn); debugMode = "RANDOM_ADV"; }
                             }
-                        } else {
-                            String bo = chooseBreakoutMove(mapData, myPos, DIRS, MOVE_CMDS);
-                            if (bo != null) { output = bo; debugMode = "BREAKOUT"; }
-                            else { output = chooseRandomAdvanceMove(mapData, myPos, DIRS, MOVE_CMDS, turn); debugMode = "RANDOM_ADV"; }
                         }
                     } else if (stuckTurnCount >= STALEMATE_THRESHOLD && hasLocalSuperiority(mapData, myPos, 3) && isRearToTeam(mapData, myPos)) {
                         // 교착 반복 + 국지적 수적 우위 + 내가 후방이면 전진선 맞추고 공격
@@ -283,12 +320,14 @@ public class Tank2 {
                         if (act == null) act = choosePatrolMove(mapData, myPos, DIRS, MOVE_CMDS, threat);
                         output = act; debugMode = (tease!=null? "TEASE_APPROACH" : (axis!=null? "AXIS_ENCIRCLE" : "ENGAGE_OR_PATROL"));
                     }
-                }
-            }
+                 }
+             }
             }
 
             // 메인 프로그램에서 명령을 처리할 수 있도록 명령어를 submit()의 인자로 전달
             System.out.printf("[T2][turn=%d] pos=(%d,%d) action=%s mode=%s df=%d de=%d\n", turn, myPos[0], myPos[1], output, debugMode, distToF, distToEnemy);
+            String stateLabel = (debugMode.contains("FIRE")? "Fire" : debugMode.contains("SUPPLY")? "Supply" : debugMode.contains("DEF")? "Defense" : debugMode.contains("RETREAT")? "Retreat" : debugMode.contains("REGROUP")? "Regroup" : debugMode.contains("ADV")? "Advance" : debugMode.contains("TEASE")? "Tease" : debugMode.contains("AXIS")? "Encircle" : debugMode.contains("PATROL")? "Patrol" : "Engage/Patrol");
+            System.out.printf("[STATE] Tank2 - %s\n", stateLabel);
             // 이동 기록 갱신
             lastWasMove = output.endsWith("A") && !output.contains(" F");
             if (lastWasMove) {
@@ -1209,5 +1248,30 @@ public class Tank2 {
             if ("R".equals(cell) || "T".equals(cell) || "F".equals(cell)) return false;
             if ("M".equals(cell) || "H".equals(cell) || cell.startsWith("M") || cell.startsWith("E") || "X".equals(cell)) return false;
         }
+    }
+
+    // 지는 싸움 회피 이동: 적과의 거리를 늘리고, 적의 즉시 사격 라인을 피함
+    private static String chooseRetreatMove(String[][] grid, int[] myPos, int[][] dirs, String[] moveCmds, boolean[][] threat){
+        int[] enemy = findNearestEnemyToMe(grid, myPos); if(enemy==null) return null;
+        int curDist = Math.abs(myPos[0]-enemy[0])+Math.abs(myPos[1]-enemy[1]);
+        int best=-1; int bestScore=Integer.MIN_VALUE;
+        for(int d=0; d<4; d++){
+            int nr=myPos[0]+dirs[d][0], nc=myPos[1]+dirs[d][1];
+            if(nr<0||nr>=grid.length||nc<0||nc>=grid[0].length) continue; String cell=grid[nr][nc];
+            if(!isWalkable(cell)) continue; if(isBlockedByAllyTurretZone(grid,nr,nc)) continue;
+            if(threat!=null && threat[nr][nc]) continue;
+            int nd = Math.abs(nr-enemy[0])+Math.abs(nc-enemy[1]);
+            int score = 0; if (nd>curDist) score += 40; else if (nd==curDist) score += 5; else score -= 40;
+            if ("S".equals(cell)) score -= 3;
+            // 적 즉시사격 각 회피
+            if (canShoot(grid, enemy, new int[]{nr,nc}, dirs)) score -= 50;
+            // 선제 턴 마진 개선 선호
+            int myT = turnsToShoot(grid, new int[]{nr,nc}, enemy, dirs, 12);
+            int enT = turnsToShootIgnoreZone(grid, enemy, new int[]{nr,nc}, dirs, 12);
+            int margin = (enT==Integer.MAX_VALUE?50:enT) - (myT==Integer.MAX_VALUE?50:myT);
+            score += Math.min(30, Math.max(-30, margin*5));
+            if(score>bestScore){ bestScore=score; best=d; }
+        }
+        return best==-1? null : moveCmds[best];
     }
 }
